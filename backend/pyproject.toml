@@ -7,7 +7,10 @@ name = "church-city-kids"
 version = "0.1.0"
 description = "Church City Kids ministry domain"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "alembic>=1.20.0",
+    "sqlalchemy>=2.0",
+]
 
 [project.optional-dependencies]
 dev = [

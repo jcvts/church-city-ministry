@@ -4,6 +4,10 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from church_city_kids.application.registration import (
+    RegisterChildRequest,
+    register_child,
+)
 from church_city_kids.domain.people import (
     Child,
     ChildGuardian,
@@ -20,6 +24,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     ChildRepository,
     FamilyRepository,
     GuardianRepository,
+    SqlAlchemyRegistrationRepository,
 )
 
 
@@ -158,3 +163,62 @@ def test_child_guardian_repository_round_trip(
         loaded_link = repository.get(link.id)
 
         assert loaded_link == link
+
+
+def test_register_child_persists_complete_registration(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    request = RegisterChildRequest(
+        child_name="Test Child",
+        birth_date=date(2021, 1, 1),
+        guardian_name="Test Guardian",
+        guardian_phone="82999999999",
+        relationship="Mother",
+    )
+
+    with Session(engine) as session:
+        repository = SqlAlchemyRegistrationRepository(session)
+
+        result = register_child(request, repository)
+
+        session.commit()
+
+    with Session(engine) as session:
+        child = ChildRepository(session).get(result.child_id)
+        guardian = GuardianRepository(session).get(result.guardian_id)
+        family = FamilyRepository(session).get(result.family_id)
+
+        assert family is not None
+        assert child is not None
+        assert guardian is not None
+
+        assert child.family_id == family.id
+        assert guardian.family_id == family.id
+
+
+def test_registration_can_be_rolled_back_as_single_transaction(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    request = RegisterChildRequest(
+        child_name="Test Child",
+        birth_date=date(2021, 1, 1),
+        guardian_name="Test Guardian",
+    )
+
+    with Session(engine) as session:
+        repository = SqlAlchemyRegistrationRepository(session)
+
+        result = register_child(request, repository)
+
+        session.rollback()
+
+    with Session(engine) as session:
+        assert FamilyRepository(session).get(result.family_id) is None
+        assert ChildRepository(session).get(result.child_id) is None
+        assert GuardianRepository(session).get(result.guardian_id) is None

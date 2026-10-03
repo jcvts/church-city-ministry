@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.people import (
     Child,
     ChildGuardian,
@@ -130,3 +131,21 @@ class ChildGuardianRepository:
             authorized_pickup=model.authorized_pickup,
         )
 
+
+class SqlAlchemyRegistrationRepository(RegistrationRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add_family(self, family: Family) -> None:
+        FamilyRepository(self._session).add(family)
+        self._session.flush()
+
+    def add_guardian(self, guardian: Guardian) -> None:
+        GuardianRepository(self._session).add(guardian)
+
+    def add_child(self, child: Child) -> None:
+        ChildRepository(self._session).add(child)
+        self._session.flush()
+
+    def add_child_guardian(self, link: ChildGuardian) -> None:
+        ChildGuardianRepository(self._session).add(link)

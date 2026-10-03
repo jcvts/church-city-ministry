@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
+from church_city_kids.application.create_service import CreateServiceRepository
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
@@ -264,3 +265,18 @@ class SqlAlchemyCheckOutRepository(CheckOutRepository):
             return
 
         model.checked_out_at = attendance.checked_out_at
+
+
+class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add_service(self, service: Service) -> None:
+        self._session.add(
+            ServiceModel(
+                id=service.id,
+                name=service.name,
+                starts_at=service.starts_at,
+                ends_at=service.ends_at,
+            )
+        )

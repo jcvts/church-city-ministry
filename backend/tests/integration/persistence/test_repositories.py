@@ -14,6 +14,10 @@ from church_city_kids.application.check_out import (
     CheckOutRequest,
     check_out_child,
 )
+from church_city_kids.application.create_service import (
+    CreateServiceRequest,
+    create_service,
+)
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -42,6 +46,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     GuardianRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
+    SqlAlchemyCreateServiceRepository,
     SqlAlchemyRegistrationRepository,
 )
 
@@ -722,3 +727,35 @@ def test_check_out_child_can_be_rolled_back(
         assert attendance is not None
         assert attendance.checked_in_at == checked_in_at
         assert attendance.checked_out_at is None
+
+
+def test_create_service_persists_service(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    starts_at = datetime(2026, 10, 4, 19, 0)
+    ends_at = datetime(2026, 10, 4, 21, 0)
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCreateServiceRepository(session)
+
+        result = create_service(
+            CreateServiceRequest(
+                name="Sunday Service",
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        service = session.get(ServiceModel, result.service_id)
+
+        assert service is not None
+        assert service.name == "Sunday Service"
+        assert service.starts_at == starts_at
+        assert service.ends_at == ends_at

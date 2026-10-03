@@ -1,19 +1,27 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.registration import RegistrationRepository
+from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
     Child,
     ChildGuardian,
     Family,
     Guardian,
 )
+from church_city_kids.domain.scheduling import Service, SessionStatus
+from church_city_kids.domain.scheduling import Session as KidsSession
 from church_city_kids.infrastructure.persistence.models import (
+    AttendanceModel,
     ChildGuardianModel,
     ChildModel,
     FamilyModel,
     GuardianModel,
+    ServiceModel,
+    SessionModel,
 )
 
 
@@ -149,3 +157,76 @@ class SqlAlchemyRegistrationRepository(RegistrationRepository):
 
     def add_child_guardian(self, link: ChildGuardian) -> None:
         ChildGuardianRepository(self._session).add(link)
+
+
+class SqlAlchemyCheckInRepository(CheckInRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_child(self, child_id: UUID) -> Child | None:
+        return ChildRepository(self._session).get(child_id)
+
+    def get_family(self, family_id: UUID) -> Family | None:
+        return FamilyRepository(self._session).get(family_id)
+
+    def get_session(self, session_id: UUID) -> KidsSession | None:
+        model = self._session.get(SessionModel, session_id)
+
+        if model is None:
+            return None
+
+        return KidsSession(
+            id=model.id,
+            service_id=model.service_id,
+            room_id=model.room_id,
+            name=model.name,
+            min_age_years=model.min_age_years,
+            max_age_years=model.max_age_years,
+            status=SessionStatus(model.status.lower()),
+        )
+
+    def get_service(self, service_id: UUID) -> Service | None:
+        model = self._session.get(ServiceModel, service_id)
+
+        if model is None:
+            return None
+
+        return Service(
+            id=model.id,
+            name=model.name,
+            starts_at=model.starts_at,
+            ends_at=model.ends_at,
+        )
+
+    def get_active_attendances(
+        self,
+        child_id: UUID,
+    ) -> list[Attendance]:
+        statement = select(AttendanceModel).where(
+            AttendanceModel.child_id == child_id,
+            AttendanceModel.checked_out_at.is_(None),
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Attendance(
+                id=model.id,
+                child_id=model.child_id,
+                session_id=model.session_id,
+                checked_in_at=model.checked_in_at,
+                checked_out_at=model.checked_out_at,
+            )
+            for model in models
+        ]
+
+    def add_attendance(self, attendance: Attendance) -> None:
+        self._session.add(
+            AttendanceModel(
+                id=attendance.id,
+                child_id=attendance.child_id,
+                session_id=attendance.session_id,
+                checked_in_at=attendance.checked_in_at,
+                checked_out_at=attendance.checked_out_at,
+            )
+        )

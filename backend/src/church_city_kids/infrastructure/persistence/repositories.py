@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from church_city_kids.application.check_in import CheckInRepository
+from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
@@ -230,3 +231,36 @@ class SqlAlchemyCheckInRepository(CheckInRepository):
                 checked_out_at=attendance.checked_out_at,
             )
         )
+
+
+class SqlAlchemyCheckOutRepository(CheckOutRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_attendance(
+        self,
+        attendance_id: UUID,
+    ) -> Attendance | None:
+        model = self._session.get(AttendanceModel, attendance_id)
+
+        if model is None:
+            return None
+
+        return Attendance(
+            id=model.id,
+            child_id=model.child_id,
+            session_id=model.session_id,
+            checked_in_at=model.checked_in_at,
+            checked_out_at=model.checked_out_at,
+        )
+
+    def save_attendance(
+        self,
+        attendance: Attendance,
+    ) -> None:
+        model = self._session.get(AttendanceModel, attendance.id)
+
+        if model is None:
+            return
+
+        model.checked_out_at = attendance.checked_out_at

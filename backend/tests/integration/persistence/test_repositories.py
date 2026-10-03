@@ -10,6 +10,10 @@ from church_city_kids.application.check_in import (
     CheckInRequest,
     check_in_child,
 )
+from church_city_kids.application.check_out import (
+    CheckOutRequest,
+    check_out_child,
+)
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -37,6 +41,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     FamilyRepository,
     GuardianRepository,
     SqlAlchemyCheckInRepository,
+    SqlAlchemyCheckOutRepository,
     SqlAlchemyRegistrationRepository,
 )
 
@@ -526,3 +531,194 @@ def test_check_in_child_allows_check_in_after_previous_checkout(
         assert attendances[1].id == result.attendance_id
         assert attendances[1].checked_in_at == second_check_in_at
         assert attendances[1].checked_out_at is None
+
+
+def test_check_out_child_persists_checkout_time(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    checked_in_at = datetime(2026, 10, 4, 18, 30)
+    checked_out_at = datetime(2026, 10, 4, 20, 0)
+
+    with Session(engine) as session:
+        session.add(
+            FamilyModel(
+                id=family_id,
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            )
+        )
+
+        session.add(
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 10, 4, 19, 0),
+                ends_at=None,
+            )
+        )
+
+        session.add(
+            RoomModel(
+                id=room_id,
+                name="Kids Room",
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            SessionModel(
+                id=session_id,
+                service_id=service_id,
+                room_id=room_id,
+                name="Kids 3-5",
+                min_age_years=3,
+                max_age_years=5,
+                status="OPEN",
+            )
+        )
+        session.flush()
+
+        session.add(
+            AttendanceModel(
+                id=attendance_id,
+                child_id=child_id,
+                session_id=session_id,
+                checked_in_at=checked_in_at,
+                checked_out_at=None,
+            )
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+
+        result = check_out_child(
+            CheckOutRequest(
+                attendance_id=attendance_id,
+                occurred_at=checked_out_at,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    assert result.attendance_id == attendance_id
+
+    with Session(engine) as session:
+        attendance = session.get(AttendanceModel, attendance_id)
+
+        assert attendance is not None
+        assert attendance.checked_in_at == checked_in_at
+        assert attendance.checked_out_at == checked_out_at
+
+
+def test_check_out_child_can_be_rolled_back(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    checked_in_at = datetime(2026, 10, 4, 18, 30)
+
+    with Session(engine) as session:
+        session.add(FamilyModel(id=family_id, is_active=True))
+        session.flush()
+
+        session.add(
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            )
+        )
+        session.add(
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 10, 4, 19, 0),
+                ends_at=None,
+            )
+        )
+        session.add(
+            RoomModel(
+                id=room_id,
+                name="Kids Room",
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            SessionModel(
+                id=session_id,
+                service_id=service_id,
+                room_id=room_id,
+                name="Kids 3-5",
+                min_age_years=3,
+                max_age_years=5,
+                status="OPEN",
+            )
+        )
+        session.flush()
+
+        session.add(
+            AttendanceModel(
+                id=attendance_id,
+                child_id=child_id,
+                session_id=session_id,
+                checked_in_at=checked_in_at,
+                checked_out_at=None,
+            )
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+
+        check_out_child(
+            CheckOutRequest(
+                attendance_id=attendance_id,
+                occurred_at=datetime(2026, 10, 4, 20, 0),
+            ),
+            repository,
+        )
+
+        session.rollback()
+
+    with Session(engine) as session:
+        attendance = session.get(AttendanceModel, attendance_id)
+
+        assert attendance is not None
+        assert attendance.checked_in_at == checked_in_at
+        assert attendance.checked_out_at is None

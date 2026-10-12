@@ -1,11 +1,13 @@
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session as DbSession
 
 from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
+from church_city_kids.application.create_room import CreateRoomRepository
 from church_city_kids.application.create_service import CreateServiceRepository
+from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
@@ -14,21 +16,26 @@ from church_city_kids.domain.people import (
     Family,
     Guardian,
 )
-from church_city_kids.domain.scheduling import Service, SessionStatus
-from church_city_kids.domain.scheduling import Session as KidsSession
+from church_city_kids.domain.scheduling import (
+    Room,
+    Service,
+    SessionStatus,
+)
+from church_city_kids.domain.scheduling import Session as DomainSession
 from church_city_kids.infrastructure.persistence.models import (
     AttendanceModel,
     ChildGuardianModel,
     ChildModel,
     FamilyModel,
     GuardianModel,
+    RoomModel,
     ServiceModel,
     SessionModel,
 )
 
 
 class ChildRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add(self, child: Child) -> None:
@@ -57,7 +64,7 @@ class ChildRepository:
 
 
 class FamilyRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add(self, family: Family) -> None:
@@ -83,7 +90,7 @@ class FamilyRepository:
 
 
 class GuardianRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add(self, guardian: Guardian) -> None:
@@ -113,7 +120,7 @@ class GuardianRepository:
 
 
 class ChildGuardianRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add(self, link: ChildGuardian) -> None:
@@ -143,7 +150,7 @@ class ChildGuardianRepository:
 
 
 class SqlAlchemyRegistrationRepository(RegistrationRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add_family(self, family: Family) -> None:
@@ -162,7 +169,7 @@ class SqlAlchemyRegistrationRepository(RegistrationRepository):
 
 
 class SqlAlchemyCheckInRepository(CheckInRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def get_child(self, child_id: UUID) -> Child | None:
@@ -171,13 +178,13 @@ class SqlAlchemyCheckInRepository(CheckInRepository):
     def get_family(self, family_id: UUID) -> Family | None:
         return FamilyRepository(self._session).get(family_id)
 
-    def get_session(self, session_id: UUID) -> KidsSession | None:
+    def get_session(self, session_id: UUID) -> DomainSession | None:
         model = self._session.get(SessionModel, session_id)
 
         if model is None:
             return None
 
-        return KidsSession(
+        return DomainSession(
             id=model.id,
             service_id=model.service_id,
             room_id=model.room_id,
@@ -235,7 +242,7 @@ class SqlAlchemyCheckInRepository(CheckInRepository):
 
 
 class SqlAlchemyCheckOutRepository(CheckOutRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def get_attendance(
@@ -268,7 +275,7 @@ class SqlAlchemyCheckOutRepository(CheckOutRepository):
 
 
 class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: DbSession) -> None:
         self._session = session
 
     def add_service(self, service: Service) -> None:
@@ -278,5 +285,110 @@ class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
                 name=service.name,
                 starts_at=service.starts_at,
                 ends_at=service.ends_at,
+            )
+        )
+
+
+class SqlAlchemyCreateRoomRepository(CreateRoomRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def add_room(self, room: Room) -> None:
+        self._session.add(
+            RoomModel(
+                id=room.id,
+                name=room.name,
+                is_active=room.is_active,
+            )
+        )
+
+
+class SqlAlchemyListRoomsRepository(ListRoomsRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_active_rooms(self) -> list[Room]:
+        statement = (
+            select(RoomModel)
+            .where(RoomModel.is_active.is_(True))
+            .order_by(RoomModel.name)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Room(
+                id=model.id,
+                name=model.name,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
+
+
+class SqlAlchemyCreateSessionRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_service(self, service_id: UUID) -> Service | None:
+        model = self._session.get(ServiceModel, service_id)
+
+        if model is None:
+            return None
+
+        return Service(
+            id=model.id,
+            name=model.name,
+            starts_at=model.starts_at,
+            ends_at=model.ends_at,
+        )
+
+    def get_room(self, room_id: UUID) -> Room | None:
+        model = self._session.get(RoomModel, room_id)
+
+        if model is None:
+            return None
+
+        return Room(
+            id=model.id,
+            name=model.name,
+            is_active=model.is_active,
+        )
+
+    def get_sessions_for_service(
+        self,
+        service_id: UUID,
+    ) -> list[DomainSession]:
+        statement = (
+            select(SessionModel)
+            .where(SessionModel.service_id == service_id)
+            .order_by(SessionModel.name)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            DomainSession(
+                id=model.id,
+                service_id=model.service_id,
+                room_id=model.room_id,
+                name=model.name,
+                min_age_years=model.min_age_years,
+                max_age_years=model.max_age_years,
+                status=SessionStatus(model.status.lower()),
+            )
+            for model in models
+        ]
+
+    def add_session(self, session: DomainSession) -> None:
+        self._session.add(
+            SessionModel(
+                id=session.id,
+                service_id=session.service_id,
+                room_id=session.room_id,
+                name=session.name,
+                min_age_years=session.min_age_years,
+                max_age_years=session.max_age_years,
+                status=session.status.value,
             )
         )

@@ -83,3 +83,7 @@ class PagerAlreadyAssignedError(DomainError):
 class AttendanceAlreadyHasPagerError(DomainError):
     def __init__(self) -> None:
         super().__init__("Attendance already has an active pager assignment.")
+
+
+class RoomInactiveError(Exception):
+    """Raised when an inactive room is assigned to a session."""

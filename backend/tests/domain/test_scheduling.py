@@ -6,9 +6,12 @@ from church_city_kids.domain.errors import (
     InvalidAgeRangeError,
     InvalidServiceScheduleError,
     RoomAlreadyAssignedInServiceError,
+    RoomInactiveError,
     VolunteerAlreadyAssignedInServiceError,
 )
 from church_city_kids.domain.scheduling import (
+    Room,
+    Service,
     Session,
     SessionStatus,
     VolunteerAssignment,
@@ -129,3 +132,29 @@ def test_session_rejects_invalid_age_range() -> None:
         create_session(service, room, "Invalid", 6, 3, [])
     with pytest.raises(InvalidAgeRangeError):
         create_session(service, room, "Invalid", -1, 5, [])
+
+
+def test_create_session_rejects_inactive_room() -> None:
+    service = Service(
+        name="Sunday Service",
+        starts_at=datetime(2026, 10, 11, 19, 0),
+    )
+
+    room = Room(
+        name="Sala Infantil",
+        is_active=False,
+    )
+
+    existing_sessions: list[Session] = []
+
+    with pytest.raises(RoomInactiveError):
+        create_session(
+            service=service,
+            room=room,
+            name="Infantil",
+            min_age_years=3,
+            max_age_years=5,
+            existing_sessions=existing_sessions,
+        )
+
+    assert existing_sessions == []

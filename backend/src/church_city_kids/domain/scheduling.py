@@ -7,6 +7,7 @@ from church_city_kids.domain.errors import (
     InvalidAgeRangeError,
     InvalidServiceScheduleError,
     RoomAlreadyAssignedInServiceError,
+    RoomInactiveError,
     VolunteerAlreadyAssignedInServiceError,
 )
 from church_city_kids.domain.people import Volunteer
@@ -78,9 +79,13 @@ def create_session(
     *,
     status: SessionStatus = SessionStatus.SCHEDULED,
 ) -> Session:
+    if not room.is_active:
+        raise RoomInactiveError()
+
     for session in existing_sessions:
         if session.service_id == service.id and session.room_id == room.id:
             raise RoomAlreadyAssignedInServiceError()
+
     session = Session(
         service_id=service.id,
         room_id=room.id,
@@ -89,7 +94,9 @@ def create_session(
         max_age_years=max_age_years,
         status=status,
     )
+
     existing_sessions.append(session)
+
     return session
 
 

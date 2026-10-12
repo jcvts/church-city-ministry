@@ -26,4 +26,28 @@ class CreateServiceBody(BaseModel):
 
 class CreateServiceResponse(BaseModel):
     service_id: UUID
- 
+
+
+class CreateRoomBody(BaseModel):
+    name: str
+
+
+class CreateRoomResponse(BaseModel):
+    room_id: UUID
+
+
+class RoomResponse(BaseModel):
+    id: UUID
+    name: str
+
+
+class CreateSessionBody(BaseModel):
+    service_id: UUID
+    room_id: UUID
+    name: str
+    min_age_years: int
+    max_age_years: int
+
+
+class CreateSessionResponse(BaseModel):
+    session_id: UUID

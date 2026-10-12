@@ -14,10 +14,15 @@ from church_city_kids.application.check_out import (
     CheckOutRequest,
     check_out_child,
 )
+from church_city_kids.application.create_room import (
+    CreateRoomRequest,
+    create_room,
+)
 from church_city_kids.application.create_service import (
     CreateServiceRequest,
     create_service,
 )
+from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -46,7 +51,9 @@ from church_city_kids.infrastructure.persistence.repositories import (
     GuardianRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
+    SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
+    SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
 )
 
@@ -759,3 +766,63 @@ def test_create_service_persists_service(
         assert service.name == "Sunday Service"
         assert service.starts_at == starts_at
         assert service.ends_at == ends_at
+
+
+def test_create_room_persists_room(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCreateRoomRepository(session)
+
+        result = create_room(
+            CreateRoomRequest(name="Kids 3-5"),
+            repository,
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        room = session.get(RoomModel, result.room_id)
+
+        assert room is not None
+        assert room.name == "Kids 3-5"
+        assert room.is_active is True
+
+
+def test_list_rooms_returns_only_active_rooms(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add_all(
+            [
+                RoomModel(
+                    id=uuid4(),
+                    name="Sala Kids",
+                    is_active=True,
+                ),
+                RoomModel(
+                    id=uuid4(),
+                    name="Sala Infantil",
+                    is_active=True,
+                ),
+                RoomModel(
+                    id=uuid4(),
+                    name="Sala Antiga",
+                    is_active=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyListRoomsRepository(session)
+
+        result = list_rooms(repository)
+
+    assert len(result) == 2
+    assert [room.name for room in result] == [
+        "Sala Infantil",
+        "Sala Kids",
+    ]

@@ -242,5 +242,3 @@ def create_session_endpoint(
         raise
 
     return CreateSessionResponse(session_id=result.session_id)
-
-

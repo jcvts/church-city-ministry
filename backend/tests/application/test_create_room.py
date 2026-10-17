@@ -14,7 +14,7 @@ class FakeCreateRoomRepository:
 
     def add_room(self, room: Room) -> None:
         self.added_rooms.append(room)
-    
+
     def room_name_exists(self, name: str) -> bool:
         normalized_name = " ".join(name.split()).casefold()
 

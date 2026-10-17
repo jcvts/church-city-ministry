@@ -13,6 +13,7 @@ from church_city_kids.infrastructure.persistence.database import (
     create_sqlite_engine,
 )
 from church_city_kids.infrastructure.persistence.models import (
+    AttendanceModel,
     Base,
     ChildModel,
     FamilyModel,
@@ -21,6 +22,64 @@ from church_city_kids.infrastructure.persistence.models import (
     ServiceModel,
     SessionModel,
 )
+
+
+def create_check_in_scenario(
+    session: Session,
+    *,
+    child_is_active: bool = True,
+    family_is_active: bool = True,
+    session_status: str = "open",
+    child_birth_date: date = date(2021, 5, 10),
+) -> tuple[UUID, UUID]:
+    family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+
+    session.add_all(
+        [
+            FamilyModel(id=family_id, is_active=family_is_active),
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 10, 17, 9, 0),
+                ends_at=datetime(2026, 10, 17, 12, 0),
+            ),
+            RoomModel(
+                id=room_id,
+                name="Sala Infantil",
+                normalized_name="sala infantil",
+                is_active=True,
+            ),
+        ]
+    )
+    session.flush()
+
+    session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=child_birth_date,
+                is_active=child_is_active,
+            ),
+            SessionModel(
+                id=session_id,
+                service_id=service_id,
+                room_id=room_id,
+                name="Infantil",
+                min_age_years=3,
+                max_age_years=5,
+                status=session_status,
+            ),
+        ]
+    )
+    session.commit()
+
+    return child_id, session_id
 
 
 @pytest.fixture
@@ -470,3 +529,241 @@ def test_create_room_returns_409_for_duplicate_name(
 
     assert len(rooms) == 1
     assert rooms[0].name == "Sala Infantil"
+
+
+def test_check_in_child_creates_attendance(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+    occurred_at = datetime(2026, 10, 17, 10, 0)
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": occurred_at.isoformat(),
+        },
+    )
+
+    assert response.status_code == 201
+
+    attendance_id = UUID(response.json()["attendance_id"])
+
+    attendance = verification_session.get(
+        AttendanceModel,
+        attendance_id,
+    )
+
+    assert attendance is not None
+    assert attendance.child_id == child_id
+    assert attendance.session_id == session_id
+    assert attendance.checked_in_at == occurred_at
+    assert attendance.checked_out_at is None
+
+
+def test_check_in_child_returns_404_when_child_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(uuid4()),
+            "session_id": str(uuid4()),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child not found",
+    }
+
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_in_child_returns_404_when_session_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(uuid4()),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Session not found",
+    }
+
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_in_child_returns_409_when_already_checked_in(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+
+    payload = {
+        "child_id": str(child_id),
+        "session_id": str(session_id),
+        "occurred_at": "2026-10-17T10:00:00",
+    }
+
+    first_response = client.post("/api/check-ins", json=payload)
+
+    assert first_response.status_code == 201
+
+    second_response = client.post("/api/check-ins", json=payload)
+
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "detail": "Child already checked in",
+    }
+
+    assert verification_session.query(AttendanceModel).count() == 1
+
+
+def test_check_in_child_returns_409_when_session_is_closed(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+        session_status="closed",
+    )
+    occurred_at = datetime(2026, 10, 17, 10, 0)
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": occurred_at.isoformat(),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Session is not open",
+    }
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_in_child_returns_409_when_child_is_inactive(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+        child_is_active=False,
+    )
+    occurred_at = datetime(2026, 10, 17, 10, 0)
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": occurred_at.isoformat(),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Child is inactive",
+    }
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_in_child_returns_409_when_family_is_inactive(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+        family_is_active=False,
+    )
+    occurred_at = datetime(2026, 10, 17, 10, 0)
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": occurred_at.isoformat(),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Family is inactive",
+    }
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_in_child_returns_422_when_child_age_is_out_of_range(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+        child_birth_date=date(2015, 5, 10),
+    )
+    occurred_at = datetime(2026, 10, 17, 10, 0)
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": occurred_at.isoformat(),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Child age is out of range",
+    }
+    assert verification_session.query(AttendanceModel).count() == 0

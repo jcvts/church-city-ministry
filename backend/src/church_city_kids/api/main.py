@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from church_city_kids.api.dependencies import get_db_session
 from church_city_kids.api.schemas import (
+    CheckInBody,
+    CheckInResponse,
     CreateRoomBody,
     CreateRoomResponse,
     CreateServiceBody,
@@ -14,6 +16,12 @@ from church_city_kids.api.schemas import (
     RegisterChildBody,
     RegisterChildResponse,
     RoomResponse,
+)
+from church_city_kids.application.check_in import (
+    CheckInRequest,
+    ChildNotFoundError,
+    SessionNotFoundError,
+    check_in_child,
 )
 from church_city_kids.application.create_room import (
     CreateRoomRequest,
@@ -35,12 +43,18 @@ from church_city_kids.application.registration import (
     register_child,
 )
 from church_city_kids.domain.errors import (
+    ChildAgeOutOfRangeError,
+    ChildAlreadyCheckedInError,
+    ChildInactiveError,
+    FamilyInactiveError,
     InvalidAgeRangeError,
     RoomAlreadyAssignedInServiceError,
     RoomInactiveError,
     RoomNameAlreadyExistsError,
+    SessionNotOpenError,
 )
 from church_city_kids.infrastructure.persistence.repositories import (
+    SqlAlchemyCheckInRepository,
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
@@ -242,3 +256,74 @@ def create_session_endpoint(
         raise
 
     return CreateSessionResponse(session_id=result.session_id)
+
+
+@app.post(
+    "/api/check-ins",
+    response_model=CheckInResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def check_in_child_endpoint(
+    body: CheckInBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+) -> CheckInResponse:
+    repository = SqlAlchemyCheckInRepository(db_session)
+
+    try:
+        result = check_in_child(
+            CheckInRequest(
+                child_id=body.child_id,
+                session_id=body.session_id,
+                occurred_at=body.occurred_at,
+            ),
+            repository,
+        )
+
+        db_session.commit()
+
+    except (ChildNotFoundError, SessionNotFoundError) as exc:
+        db_session.rollback()
+
+        detail = (
+            "Child not found"
+            if isinstance(exc, ChildNotFoundError)
+            else "Session not found"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=detail,
+        ) from exc
+
+    except (
+        ChildAlreadyCheckedInError,
+        SessionNotOpenError,
+        ChildInactiveError,
+        FamilyInactiveError,
+    ) as exc:
+        db_session.rollback()
+
+        details = {
+            ChildAlreadyCheckedInError: "Child already checked in",
+            SessionNotOpenError: "Session is not open",
+            ChildInactiveError: "Child is inactive",
+            FamilyInactiveError: "Family is inactive",
+        }
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=details[type(exc)],
+        ) from exc
+
+    except ChildAgeOutOfRangeError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Child age is out of range",
+        ) from exc
+
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return CheckInResponse(attendance_id=result.attendance_id)

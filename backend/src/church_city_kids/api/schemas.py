@@ -51,3 +51,13 @@ class CreateSessionBody(BaseModel):
 
 class CreateSessionResponse(BaseModel):
     session_id: UUID
+
+
+class CheckInBody(BaseModel):
+    child_id: UUID
+    session_id: UUID
+    occurred_at: datetime
+
+
+class CheckInResponse(BaseModel):
+    attendance_id: UUID

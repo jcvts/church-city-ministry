@@ -12,6 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from church_city_kids.domain.scheduling import normalize_room_name
 from church_city_kids.infrastructure.persistence.base import Base
 
 
@@ -100,6 +101,14 @@ class RoomModel(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    normalized_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        unique=True,
+        default=lambda context: normalize_room_name(
+            context.get_current_parameters()["name"]
+        ),
+    )
 
 
 class SessionModel(Base):

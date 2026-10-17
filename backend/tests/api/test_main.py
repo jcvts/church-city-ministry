@@ -153,16 +153,18 @@ def test_list_rooms_returns_only_active_rooms(
     verification_session.add_all(
         [
             RoomModel(
-                id=active_room_id,  # Correção aqui
+                id=active_room_id,
                 name="Sala Infantil",
+                normalized_name="sala infantil",
                 is_active=True,
             ),
             RoomModel(
                 id=uuid4(),
                 name="Sala Desativada",
+                normalized_name="sala desativada",
                 is_active=False,
             ),
-        ]
+                    ]
     )
     verification_session.commit()
 
@@ -443,3 +445,28 @@ def test_create_session_returns_422_for_invalid_age_range(
     }
 
     assert verification_session.query(SessionModel).count() == 0
+
+
+def test_create_room_returns_409_for_duplicate_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    first_response = client.post(
+        "/api/rooms",
+        json={"name": "Sala Infantil"},
+    )
+
+    assert first_response.status_code == 201
+
+    duplicate_response = client.post(
+        "/api/rooms",
+        json={"name": "  sala   infantil  "},
+    )
+
+    assert duplicate_response.status_code == 409
+
+    rooms = verification_session.query(RoomModel).all()
+
+    assert len(rooms) == 1
+    assert rooms[0].name == "Sala Infantil"

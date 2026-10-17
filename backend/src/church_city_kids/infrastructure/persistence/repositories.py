@@ -20,6 +20,7 @@ from church_city_kids.domain.scheduling import (
     Room,
     Service,
     SessionStatus,
+    normalize_room_name,
 )
 from church_city_kids.domain.scheduling import Session as DomainSession
 from church_city_kids.infrastructure.persistence.models import (
@@ -293,11 +294,23 @@ class SqlAlchemyCreateRoomRepository(CreateRoomRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session
 
+    def room_name_exists(self, name: str) -> bool:
+        normalized_name = normalize_room_name(name)
+
+        statement = select(RoomModel.name)
+        existing_names = self._session.scalars(statement)
+
+        return any(
+            normalize_room_name(existing_name) == normalized_name
+            for existing_name in existing_names
+        )
+
     def add_room(self, room: Room) -> None:
         self._session.add(
             RoomModel(
                 id=room.id,
                 name=room.name,
+                normalized_name=normalize_room_name(room.name),
                 is_active=room.is_active,
             )
         )

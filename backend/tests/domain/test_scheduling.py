@@ -17,6 +17,7 @@ from church_city_kids.domain.scheduling import (
     VolunteerAssignment,
     assign_volunteer,
     create_session,
+    normalize_room_name,
 )
 from tests.domain.factories import (
     make_room,
@@ -158,3 +159,20 @@ def test_create_session_rejects_inactive_room() -> None:
         )
 
     assert existing_sessions == []
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Sala Infantil", "sala infantil"),
+        ("sala infantil", "sala infantil"),
+        ("  SALA   INFANTIL  ", "sala infantil"),
+        ("Sala\tInfantil", "sala infantil"),
+        ("Sala Juvenil", "sala juvenil"),
+    ],
+)
+def test_normalize_room_name(
+    name: str,
+    expected: str,
+) -> None:
+    assert normalize_room_name(name) == expected

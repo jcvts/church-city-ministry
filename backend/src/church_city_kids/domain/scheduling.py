@@ -117,3 +117,7 @@ def assign_volunteer(
     )
     assignments_in_service.append(assignment)
     return assignment
+
+
+def normalize_room_name(name: str) -> str:
+    return " ".join(name.split()).casefold()

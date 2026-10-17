@@ -87,3 +87,7 @@ class AttendanceAlreadyHasPagerError(DomainError):
 
 class RoomInactiveError(Exception):
     """Raised when an inactive room is assigned to a session."""
+
+
+class RoomNameAlreadyExistsError(Exception):
+    """Raised when a room name is already in use."""

@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from church_city_kids.application.check_in import (
@@ -34,6 +34,7 @@ from church_city_kids.domain.people import (
     Family,
     Guardian,
 )
+from church_city_kids.domain.scheduling import Room
 from church_city_kids.infrastructure.persistence.base import Base
 from church_city_kids.infrastructure.persistence.database import create_sqlite_engine
 from church_city_kids.infrastructure.persistence.models import (
@@ -826,3 +827,60 @@ def test_list_rooms_returns_only_active_rooms(tmp_path: Path) -> None:
         "Sala Infantil",
         "Sala Kids",
     ]
+
+
+def test_create_room_repository_finds_equivalent_name(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            RoomModel(
+                id=uuid4(),
+                name="Sala Infantil",
+                is_active=True,
+            )
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCreateRoomRepository(session)
+
+        assert repository.room_name_exists("Sala Infantil") is True
+        assert repository.room_name_exists("sala infantil") is True
+        assert repository.room_name_exists("  SALA   INFANTIL  ") is True
+        assert repository.room_name_exists("Sala Juvenil") is False
+
+    engine.dispose()
+
+
+def test_create_room_repository_persists_normalized_name(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "normalized_room_test.db")
+    Base.metadata.create_all(engine)
+
+    room = Room(name="  SALA   INFANTIL  ")
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCreateRoomRepository(session)
+        repository.add_room(room)
+        session.commit()
+
+    with Session(engine) as session:
+        normalized_name = session.execute(
+            text(
+                """
+                SELECT normalized_name
+                FROM rooms
+                WHERE id = :room_id
+                """
+            ),
+            {"room_id": room.id.hex},
+        ).scalar_one()
+
+    assert normalized_name == "sala infantil"
+
+    engine.dispose()

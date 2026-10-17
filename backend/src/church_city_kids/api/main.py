@@ -38,6 +38,7 @@ from church_city_kids.domain.errors import (
     InvalidAgeRangeError,
     RoomAlreadyAssignedInServiceError,
     RoomInactiveError,
+    RoomNameAlreadyExistsError,
 )
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateRoomRepository,
@@ -145,6 +146,13 @@ def create_room_endpoint(
 
         session.commit()
 
+    except RoomNameAlreadyExistsError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Room name already exists",
+        ) from None
+
     except Exception:
         session.rollback()
         raise
@@ -234,3 +242,5 @@ def create_session_endpoint(
         raise
 
     return CreateSessionResponse(session_id=result.session_id)
+
+

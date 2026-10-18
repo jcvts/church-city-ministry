@@ -61,3 +61,12 @@ class CheckInBody(BaseModel):
 
 class CheckInResponse(BaseModel):
     attendance_id: UUID
+
+
+class CheckOutBody(BaseModel):
+    attendance_id: UUID
+    occurred_at: datetime
+
+
+class CheckOutResponse(BaseModel):
+    attendance_id: UUID

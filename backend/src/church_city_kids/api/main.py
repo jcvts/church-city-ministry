@@ -7,6 +7,8 @@ from church_city_kids.api.dependencies import get_db_session
 from church_city_kids.api.schemas import (
     CheckInBody,
     CheckInResponse,
+    CheckOutBody,
+    CheckOutResponse,
     CreateRoomBody,
     CreateRoomResponse,
     CreateServiceBody,
@@ -22,6 +24,11 @@ from church_city_kids.application.check_in import (
     ChildNotFoundError,
     SessionNotFoundError,
     check_in_child,
+)
+from church_city_kids.application.check_out import (
+    AttendanceNotFoundError,
+    CheckOutRequest,
+    check_out_child,
 )
 from church_city_kids.application.create_room import (
     CreateRoomRequest,
@@ -43,6 +50,7 @@ from church_city_kids.application.registration import (
     register_child,
 )
 from church_city_kids.domain.errors import (
+    AttendanceAlreadyCheckedOutError,
     ChildAgeOutOfRangeError,
     ChildAlreadyCheckedInError,
     ChildInactiveError,
@@ -55,6 +63,7 @@ from church_city_kids.domain.errors import (
 )
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCheckInRepository,
+    SqlAlchemyCheckOutRepository,
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
@@ -327,3 +336,46 @@ def check_in_child_endpoint(
         raise
 
     return CheckInResponse(attendance_id=result.attendance_id)
+
+
+@app.post(
+    "/api/check-outs",
+    response_model=CheckOutResponse,
+    status_code=status.HTTP_200_OK,
+)
+def check_out_child_endpoint(
+    body: CheckOutBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+) -> CheckOutResponse:
+    repository = SqlAlchemyCheckOutRepository(db_session)
+
+    try:
+        result = check_out_child(
+            CheckOutRequest(
+                attendance_id=body.attendance_id,
+                occurred_at=body.occurred_at,
+            ),
+            repository,
+        )
+
+        db_session.commit()
+
+    except AttendanceNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attendance not found",
+        ) from exc
+
+    except AttendanceAlreadyCheckedOutError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attendance already checked out",
+        ) from exc
+
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return CheckOutResponse(attendance_id=result.attendance_id)

@@ -767,3 +767,127 @@ def test_check_in_child_returns_422_when_child_age_is_out_of_range(
         "detail": "Child age is out of range",
     }
     assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_out_child_updates_attendance(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+
+    check_in_response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert check_in_response.status_code == 201
+
+    attendance_id = UUID(check_in_response.json()["attendance_id"])
+
+    response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(attendance_id),
+            "occurred_at": "2026-10-17T11:00:00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "attendance_id": str(attendance_id),
+    }
+
+    verification_session.expire_all()
+
+    attendance = verification_session.get(
+        AttendanceModel,
+        attendance_id,
+    )
+
+    assert attendance is not None
+    assert attendance.checked_in_at == datetime(2026, 10, 17, 10, 0)
+    assert attendance.checked_out_at == datetime(2026, 10, 17, 11, 0)
+
+
+def test_check_out_child_returns_404_when_attendance_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(uuid4()),
+            "occurred_at": "2026-10-17T11:00:00",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Attendance not found",
+    }
+
+    assert verification_session.query(AttendanceModel).count() == 0
+
+
+def test_check_out_child_returns_409_when_already_checked_out(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+
+    check_in_response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert check_in_response.status_code == 201
+    attendance_id = UUID(check_in_response.json()["attendance_id"])
+
+    first_response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(attendance_id),
+            "occurred_at": "2026-10-17T11:00:00",
+        },
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(attendance_id),
+            "occurred_at": "2026-10-17T11:30:00",
+        },
+    )
+
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "detail": "Attendance already checked out",
+    }
+
+    verification_session.expire_all()
+
+    attendance = verification_session.get(
+        AttendanceModel,
+        attendance_id,
+    )
+
+    assert attendance is not None
+    assert attendance.checked_out_at == datetime(2026, 10, 17, 11, 0)
+    assert verification_session.query(AttendanceModel).count() == 1

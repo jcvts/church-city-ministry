@@ -10,9 +10,10 @@ from church_city_kids.domain.errors import (
     ChildInactiveError,
     FamilyInactiveError,
     FamilyMismatchError,
+    GuardianNotAuthorizedForPickupError,
     SessionNotOpenError,
 )
-from church_city_kids.domain.people import Child, Family
+from church_city_kids.domain.people import Child, ChildGuardian, Family, Guardian
 from church_city_kids.domain.scheduling import Service, Session, SessionStatus
 
 
@@ -23,6 +24,7 @@ class Attendance:
     checked_in_at: datetime
     id: UUID = field(default_factory=uuid4)
     checked_out_at: datetime | None = None
+    checked_out_by_guardian_id: UUID | None = None
 
     @property
     def is_active(self) -> bool:
@@ -71,3 +73,18 @@ def check_out(
         raise CheckOutBeforeCheckInError()
 
     attendance.checked_out_at = occurred_at
+
+
+def authorize_guardian_pickup(
+    child: Child,
+    guardian: Guardian,
+    link: ChildGuardian,
+) -> None:
+    if (
+        not guardian.is_active
+        or guardian.family_id != child.family_id
+        or link.child_id != child.id
+        or link.guardian_id != guardian.id
+        or not link.authorized_pickup
+    ):
+        raise GuardianNotAuthorizedForPickupError()

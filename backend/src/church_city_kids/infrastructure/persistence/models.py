@@ -196,6 +196,10 @@ class AttendanceModel(Base):
         DateTime,
         nullable=True,
     )
+    checked_out_by_guardian_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("guardians.id"),
+        nullable=True,
+    )
 
 
 class PagerModel(Base):

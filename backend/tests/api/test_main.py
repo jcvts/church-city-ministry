@@ -15,6 +15,7 @@ from church_city_kids.infrastructure.persistence.database import (
 from church_city_kids.infrastructure.persistence.models import (
     AttendanceModel,
     Base,
+    ChildGuardianModel,
     ChildModel,
     FamilyModel,
     GuardianModel,
@@ -80,6 +81,39 @@ def create_check_in_scenario(
     session.commit()
 
     return child_id, session_id
+
+
+def create_authorized_guardian(
+    session: Session,
+    child_id: UUID,
+) -> UUID:
+    child = session.get(ChildModel, child_id)
+    assert child is not None
+
+    guardian_id = uuid4()
+
+    session.add(
+        GuardianModel(
+            id=guardian_id,
+            family_id=child.family_id,
+            full_name="João Silva",
+            is_active=True,
+        )
+    )
+    session.flush()
+
+    session.add(
+        ChildGuardianModel(
+            id=uuid4(),
+            child_id=child_id,
+            guardian_id=guardian_id,
+            relationship="father",
+            authorized_pickup=True,
+        )
+    )
+    session.commit()
+
+    return guardian_id
 
 
 @pytest.fixture
@@ -778,6 +812,11 @@ def test_check_out_child_updates_attendance(
         verification_session,
     )
 
+    guardian_id = create_authorized_guardian(
+        verification_session,
+        child_id,
+    )
+
     check_in_response = client.post(
         "/api/check-ins",
         json={
@@ -795,6 +834,7 @@ def test_check_out_child_updates_attendance(
         "/api/check-outs",
         json={
             "attendance_id": str(attendance_id),
+            "guardian_id": str(guardian_id),
             "occurred_at": "2026-10-17T11:00:00",
         },
     )
@@ -814,6 +854,55 @@ def test_check_out_child_updates_attendance(
     assert attendance is not None
     assert attendance.checked_in_at == datetime(2026, 10, 17, 10, 0)
     assert attendance.checked_out_at == datetime(2026, 10, 17, 11, 0)
+    assert attendance.checked_out_by_guardian_id == guardian_id
+
+
+def test_check_out_child_returns_403_for_unauthorized_guardian(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+
+    check_in_response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert check_in_response.status_code == 201
+    attendance_id = UUID(check_in_response.json()["attendance_id"])
+
+    # This guardian has no authorization to pick up the child.
+    response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(attendance_id),
+            "guardian_id": str(uuid4()),
+            "occurred_at": "2026-10-17T11:00:00",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Guardian is not authorized to pick up this child",
+    }
+
+    verification_session.expire_all()
+
+    attendance = verification_session.get(
+        AttendanceModel,
+        attendance_id,
+    )
+
+    assert attendance is not None
+    assert attendance.checked_out_at is None
+    assert attendance.checked_out_by_guardian_id is None
 
 
 def test_check_out_child_returns_404_when_attendance_does_not_exist(
@@ -825,6 +914,7 @@ def test_check_out_child_returns_404_when_attendance_does_not_exist(
         "/api/check-outs",
         json={
             "attendance_id": str(uuid4()),
+            "guardian_id": str(uuid4()),
             "occurred_at": "2026-10-17T11:00:00",
         },
     )
@@ -846,6 +936,11 @@ def test_check_out_child_returns_409_when_already_checked_out(
         verification_session,
     )
 
+    guardian_id = create_authorized_guardian(
+        verification_session,
+        child_id,
+    )
+
     check_in_response = client.post(
         "/api/check-ins",
         json={
@@ -863,6 +958,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
         json={
             "attendance_id": str(attendance_id),
             "occurred_at": "2026-10-17T11:00:00",
+            "guardian_id": str(guardian_id),
         },
     )
 
@@ -873,6 +969,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
         json={
             "attendance_id": str(attendance_id),
             "occurred_at": "2026-10-17T11:30:00",
+            "guardian_id": str(guardian_id),
         },
     )
 
@@ -902,6 +999,11 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
         verification_session,
     )
 
+    guardian_id = create_authorized_guardian(
+        verification_session,
+        child_id,
+    )
+
     check_in_response = client.post(
         "/api/check-ins",
         json={
@@ -918,6 +1020,7 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
         "/api/check-outs",
         json={
             "attendance_id": str(attendance_id),
+            "guardian_id": str(guardian_id),
             "occurred_at": "2026-10-17T09:30:00",
         },
     )

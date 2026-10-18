@@ -65,6 +65,7 @@ class CheckInResponse(BaseModel):
 
 class CheckOutBody(BaseModel):
     attendance_id: UUID
+    guardian_id: UUID
     occurred_at: datetime
 
 

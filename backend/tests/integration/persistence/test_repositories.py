@@ -624,6 +624,23 @@ def test_check_out_child_persists_checkout_time(
 
         session.commit()
 
+    guardian = Guardian(
+        family_id=family_id,
+        full_name="Maria Silva",
+    )
+    link = ChildGuardian(
+        child_id=child_id,
+        guardian_id=guardian.id,
+        authorized_pickup=True,
+    )
+
+    with Session(engine) as session:
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
     with Session(engine) as session:
         repository = SqlAlchemyCheckOutRepository(session)
 
@@ -631,6 +648,7 @@ def test_check_out_child_persists_checkout_time(
             CheckOutRequest(
                 attendance_id=attendance_id,
                 occurred_at=checked_out_at,
+                guardian_id=guardian.id,
             ),
             repository,
         )
@@ -645,6 +663,15 @@ def test_check_out_child_persists_checkout_time(
         assert attendance is not None
         assert attendance.checked_in_at == checked_in_at
         assert attendance.checked_out_at == checked_out_at
+        assert attendance.checked_out_by_guardian_id == guardian.id
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+        loaded_attendance = repository.get_attendance(attendance_id)
+
+        assert loaded_attendance is not None
+        assert loaded_attendance.checked_out_at == checked_out_at
+        assert loaded_attendance.checked_out_by_guardian_id == guardian.id
 
 
 def test_check_out_child_can_be_rolled_back(
@@ -716,6 +743,23 @@ def test_check_out_child_can_be_rolled_back(
         )
         session.commit()
 
+    guardian = Guardian(
+        family_id=family_id,
+        full_name="Maria Silva",
+    )
+    link = ChildGuardian(
+        child_id=child_id,
+        guardian_id=guardian.id,
+        authorized_pickup=True,
+    )
+
+    with Session(engine) as session:
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
     with Session(engine) as session:
         repository = SqlAlchemyCheckOutRepository(session)
 
@@ -723,6 +767,7 @@ def test_check_out_child_can_be_rolled_back(
             CheckOutRequest(
                 attendance_id=attendance_id,
                 occurred_at=datetime(2026, 10, 4, 20, 0),
+                guardian_id=guardian.id,
             ),
             repository,
         )
@@ -735,6 +780,7 @@ def test_check_out_child_can_be_rolled_back(
         assert attendance is not None
         assert attendance.checked_in_at == checked_in_at
         assert attendance.checked_out_at is None
+        assert attendance.checked_out_by_guardian_id is None
 
 
 def test_create_service_persists_service(

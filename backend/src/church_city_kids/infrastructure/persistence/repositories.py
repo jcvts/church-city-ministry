@@ -246,6 +246,34 @@ class SqlAlchemyCheckOutRepository(CheckOutRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session
 
+    def get_child(self, child_id: UUID) -> Child | None:
+        return ChildRepository(self._session).get(child_id)
+
+    def get_guardian(self, guardian_id: UUID) -> Guardian | None:
+        return GuardianRepository(self._session).get(guardian_id)
+
+    def get_child_guardian(
+        self,
+        child_id: UUID,
+        guardian_id: UUID,
+    ) -> ChildGuardian | None:
+        statement = select(ChildGuardianModel).where(
+            ChildGuardianModel.child_id == child_id,
+            ChildGuardianModel.guardian_id == guardian_id,
+        )
+        model = self._session.scalar(statement)
+
+        if model is None:
+            return None
+
+        return ChildGuardian(
+            id=model.id,
+            child_id=model.child_id,
+            guardian_id=model.guardian_id,
+            relationship=model.relationship,
+            authorized_pickup=model.authorized_pickup,
+        )
+
     def get_attendance(
         self,
         attendance_id: UUID,
@@ -261,6 +289,7 @@ class SqlAlchemyCheckOutRepository(CheckOutRepository):
             session_id=model.session_id,
             checked_in_at=model.checked_in_at,
             checked_out_at=model.checked_out_at,
+            checked_out_by_guardian_id=model.checked_out_by_guardian_id,
         )
 
     def save_attendance(
@@ -273,6 +302,7 @@ class SqlAlchemyCheckOutRepository(CheckOutRepository):
             return
 
         model.checked_out_at = attendance.checked_out_at
+        model.checked_out_by_guardian_id = attendance.checked_out_by_guardian_id
 
 
 class SqlAlchemyCreateServiceRepository(CreateServiceRepository):

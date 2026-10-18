@@ -96,3 +96,8 @@ class RoomNameAlreadyExistsError(Exception):
 class CheckOutBeforeCheckInError(DomainError):
     def __init__(self) -> None:
         super().__init__("Check-out cannot occur before check-in.")
+
+
+class GuardianNotAuthorizedForPickupError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("Guardian is not authorized to pick up this child.")

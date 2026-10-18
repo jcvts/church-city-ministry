@@ -56,6 +56,7 @@ from church_city_kids.domain.errors import (
     ChildAlreadyCheckedInError,
     ChildInactiveError,
     FamilyInactiveError,
+    GuardianNotAuthorizedForPickupError,
     InvalidAgeRangeError,
     RoomAlreadyAssignedInServiceError,
     RoomInactiveError,
@@ -354,6 +355,7 @@ def check_out_child_endpoint(
         result = check_out_child(
             CheckOutRequest(
                 attendance_id=body.attendance_id,
+                guardian_id=body.guardian_id,
                 occurred_at=body.occurred_at,
             ),
             repository,
@@ -380,6 +382,13 @@ def check_out_child_endpoint(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Check-out cannot occur before check-in",
+        ) from exc
+
+    except GuardianNotAuthorizedForPickupError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guardian is not authorized to pick up this child",
         ) from exc
 
     except Exception:

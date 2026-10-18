@@ -51,6 +51,7 @@ from church_city_kids.application.registration import (
 )
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
+    CheckOutBeforeCheckInError,
     ChildAgeOutOfRangeError,
     ChildAlreadyCheckedInError,
     ChildInactiveError,
@@ -372,6 +373,13 @@ def check_out_child_endpoint(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Attendance already checked out",
+        ) from exc
+
+    except CheckOutBeforeCheckInError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Check-out cannot occur before check-in",
         ) from exc
 
     except Exception:

@@ -1,10 +1,12 @@
 from datetime import date, datetime
+from uuid import uuid4
 
 import pytest
 
 from church_city_kids.domain.attendance import Attendance, check_in, check_out
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
+    CheckOutBeforeCheckInError,
     ChildAgeOutOfRangeError,
     ChildAlreadyCheckedInError,
     ChildInactiveError,
@@ -181,3 +183,20 @@ def test_checkout_of_already_checked_out_attendance_fails() -> None:
     check_out(attendance, datetime(2026, 9, 20, 11, 0))
     with pytest.raises(AttendanceAlreadyCheckedOutError):
         check_out(attendance, datetime(2026, 9, 20, 11, 5))
+
+
+def test_checkout_before_checkin_is_rejected() -> None:
+    attendance = Attendance(
+        child_id=uuid4(),
+        session_id=uuid4(),
+        checked_in_at=datetime(2026, 10, 17, 10, 0),
+    )
+
+    with pytest.raises(CheckOutBeforeCheckInError):
+        check_out(
+            attendance,
+            datetime(2026, 10, 17, 9, 30),
+        )
+
+    assert attendance.checked_out_at is None
+    assert attendance.is_active

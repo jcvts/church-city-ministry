@@ -891,3 +891,49 @@ def test_check_out_child_returns_409_when_already_checked_out(
     assert attendance is not None
     assert attendance.checked_out_at == datetime(2026, 10, 17, 11, 0)
     assert verification_session.query(AttendanceModel).count() == 1
+
+
+def test_check_out_child_returns_422_when_checkout_precedes_checkin(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session,
+    )
+
+    check_in_response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": "2026-10-17T10:00:00",
+        },
+    )
+
+    assert check_in_response.status_code == 201
+    attendance_id = UUID(check_in_response.json()["attendance_id"])
+
+    response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(attendance_id),
+            "occurred_at": "2026-10-17T09:30:00",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Check-out cannot occur before check-in",
+    }
+
+    verification_session.expire_all()
+
+    attendance = verification_session.get(
+        AttendanceModel,
+        attendance_id,
+    )
+
+    assert attendance is not None
+    assert attendance.checked_out_at is None
+    assert verification_session.query(AttendanceModel).count() == 1

@@ -91,3 +91,8 @@ class RoomInactiveError(Exception):
 
 class RoomNameAlreadyExistsError(Exception):
     """Raised when a room name is already in use."""
+
+
+class CheckOutBeforeCheckInError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("Check-out cannot occur before check-in.")

@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
+    CheckOutBeforeCheckInError,
     ChildAgeOutOfRangeError,
     ChildAlreadyCheckedInError,
     ChildInactiveError,
@@ -66,4 +67,7 @@ def check_out(
     if attendance.checked_out_at is not None:
         raise AttendanceAlreadyCheckedOutError()
 
-    attendance.checked_out_at = occurred_at 
+    if occurred_at < attendance.checked_in_at:
+        raise CheckOutBeforeCheckInError()
+
+    attendance.checked_out_at = occurred_at

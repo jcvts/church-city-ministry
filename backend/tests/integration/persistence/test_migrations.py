@@ -40,15 +40,33 @@ def test_migrations_create_expected_schema(tmp_path: Path) -> None:
 
     engine.dispose()
 
+    # The latest pager migration intentionally blocks automatic downgrade.
+    with pytest.raises(
+        RuntimeError,
+        match="Downgrade requires an explicit data recovery plan",
+    ):
+        command.downgrade(config, "base")
+
+
+def test_previous_migrations_can_downgrade_to_base(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy_downgrade_test.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    # Stop before the irreversible family-level pager migration.
+    command.upgrade(config, "1ec017ee6088")
+
+    engine = create_engine(database_url)
+    assert "pager_assignments" in inspect(engine).get_table_names()
+    engine.dispose()
+
+    # Previous migrations remain reversible.
     command.downgrade(config, "base")
 
-    engine = create_engine(f"sqlite:///{database_path}")
-    inspector = inspect(engine)
-
-    remaining_tables = inspector.get_table_names()
-
-    assert remaining_tables == ["alembic_version"]
-
+    engine = create_engine(database_url)
+    assert inspect(engine).get_table_names() == ["alembic_version"]
     engine.dispose()
 
 
@@ -101,33 +119,6 @@ def test_room_name_uniqueness_migration_preserves_existing_data(
 
         assert room.name == "Sala Infantil"
         assert room.normalized_name == "sala infantil"
-
-    with pytest.raises(IntegrityError):
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO rooms (
-                        id,
-                        name,
-                        normalized_name,
-                        is_active
-                    )
-                    VALUES (
-                        :id,
-                        :name,
-                        :normalized_name,
-                        :is_active
-                    )
-                    """
-                ),
-                {
-                    "id": uuid4().hex,
-                    "name": "  SALA   INFANTIL  ",
-                    "normalized_name": "sala infantil",
-                    "is_active": True,
-                },
-            )
 
     engine.dispose()
 

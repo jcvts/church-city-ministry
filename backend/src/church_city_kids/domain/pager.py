@@ -2,10 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.errors import (
-    AttendanceAlreadyHasPagerError,
-    AttendanceNotActiveError,
     PagerAlreadyAssignedError,
     PagerInactiveError,
 )
@@ -24,7 +21,8 @@ class Pager:
 @dataclass
 class PagerAssignment:
     pager_id: UUID
-    attendance_id: UUID
+    family_id: UUID
+    service_id: UUID
     assigned_at: datetime
     id: UUID = field(default_factory=uuid4)
     released_at: datetime | None = None
@@ -39,26 +37,40 @@ class PagerAssignment:
 
 
 def assign_pager(
-    attendance: Attendance,
+    *,
+    family_id: UUID,
+    service_id: UUID,
     pager: Pager,
     active_assignments: list[PagerAssignment],
     occurred_at: datetime,
 ) -> PagerAssignment:
-    if not attendance.is_active:
-        raise AttendanceNotActiveError()
     if not pager.is_active:
         raise PagerInactiveError()
+
     for assignment in active_assignments:
         if not assignment.is_active:
             continue
+
+        same_family_and_service = (
+            assignment.family_id == family_id
+            and assignment.service_id == service_id
+        )
+
         if assignment.pager_id == pager.id:
+            if same_family_and_service:
+                return assignment
+
             raise PagerAlreadyAssignedError()
-        if assignment.attendance_id == attendance.id:
-            raise AttendanceAlreadyHasPagerError()
+
+        if same_family_and_service:
+            raise PagerAlreadyAssignedError()
+
     assignment = PagerAssignment(
         pager_id=pager.id,
-        attendance_id=attendance.id,
+        family_id=family_id,
+        service_id=service_id,
         assigned_at=occurred_at,
     )
+
     active_assignments.append(assignment)
     return assignment

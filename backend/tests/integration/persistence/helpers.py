@@ -97,3 +97,29 @@ def create_attendance(
     session.flush()
 
     return attendance_id
+
+
+def create_family_and_service(session: Session) -> tuple[UUID, UUID]:
+    """Create a family and service for persistence tests."""
+    family_id = uuid4()
+    service_id = uuid4()
+
+    session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+
+    session.add(
+        ServiceModel(
+            id=service_id,
+            name="Sunday Service",
+            starts_at=datetime(2026, 9, 20, 19, 0),
+            ends_at=None,
+        )
+    )
+
+    session.flush()
+
+    return family_id, service_id

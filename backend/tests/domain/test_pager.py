@@ -1,98 +1,200 @@
-from datetime import date, datetime
+from datetime import datetime
 
 import pytest
 
-from church_city_kids.domain.attendance import Attendance, check_in, check_out
 from church_city_kids.domain.errors import (
-    AttendanceAlreadyHasPagerError,
-    AttendanceNotActiveError,
     PagerAlreadyAssignedError,
     PagerInactiveError,
 )
 from church_city_kids.domain.pager import Pager, PagerAssignment, assign_pager
-from tests.domain.factories import (
-    make_child,
-    make_family,
-    make_open_session,
-    make_room,
-    make_service,
-)
+from tests.domain.factories import make_family, make_service
 
 
-def _checked_in() -> Attendance:
+def test_assign_pager_to_family_for_service() -> None:
     family = make_family()
-    child = make_child(family, birth_date=date(2021, 1, 1))
     service = make_service()
-    session = make_open_session(service, make_room())
-    attendance = check_in(
-        child, family, session, service, [], datetime(2026, 9, 20, 9, 50)
+    pager = Pager(code="012")
+
+    assignment = assign_pager(
+        family_id=family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=[],
+        occurred_at=datetime(2026, 9, 20, 9, 51),
     )
-    return attendance
 
-
-def test_assign_pager_to_active_attendance() -> None:
-    attendance = _checked_in()
-    pager = Pager(code="12")
-    assignment = assign_pager(attendance, pager, [], datetime(2026, 9, 20, 9, 51))
     assert assignment.pager_id == pager.id
-    assert assignment.attendance_id == attendance.id
+    assert assignment.family_id == family.id
+    assert assignment.service_id == service.id
     assert assignment.is_active
+    assert not hasattr(assignment, "attendance_id")
 
 
-def test_same_pager_cannot_be_assigned_twice() -> None:
-    first = _checked_in()
-    second = _checked_in()
-    pager = Pager(code="12")
+def test_same_pager_cannot_be_assigned_to_different_families() -> None:
+    first_family = make_family()
+    second_family = make_family()
+    service = make_service()
+    pager = Pager(code="012")
     assignments: list[PagerAssignment] = []
-    assign_pager(first, pager, assignments, datetime(2026, 9, 20, 9, 51))
-    with pytest.raises(PagerAlreadyAssignedError):
-        assign_pager(second, pager, assignments, datetime(2026, 9, 20, 9, 52))
 
-
-def test_attendance_cannot_have_two_active_pagers() -> None:
-    attendance = _checked_in()
-    assignments: list[PagerAssignment] = []
     assign_pager(
-        attendance, Pager(code="12"), assignments, datetime(2026, 9, 20, 9, 51)
+        family_id=first_family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 51),
     )
-    with pytest.raises(AttendanceAlreadyHasPagerError):
+
+    with pytest.raises(PagerAlreadyAssignedError):
         assign_pager(
-            attendance, Pager(code="13"), assignments, datetime(2026, 9, 20, 9, 52)
+            family_id=second_family.id,
+            service_id=service.id,
+            pager=pager,
+            active_assignments=assignments,
+            occurred_at=datetime(2026, 9, 20, 9, 52),
         )
 
 
-def test_cannot_assign_pager_to_checked_out_attendance() -> None:
-    attendance = _checked_in()
-    check_out(attendance, datetime(2026, 9, 20, 11, 0))
-    with pytest.raises(AttendanceNotActiveError):
-        assign_pager(attendance, Pager(code="12"), [], datetime(2026, 9, 20, 11, 1))
+def test_family_cannot_have_two_active_pagers_in_same_service() -> None:
+    family = make_family()
+    service = make_service()
+    assignments: list[PagerAssignment] = []
+    assigned_at = datetime(2026, 9, 20, 9, 51)
+
+    assign_pager(
+        family_id=family.id,
+        service_id=service.id,
+        pager=Pager(code="012"),
+        active_assignments=assignments,
+        occurred_at=assigned_at,
+    )
+
+    with pytest.raises(PagerAlreadyAssignedError):
+        assign_pager(
+            family_id=family.id,
+            service_id=service.id,
+            pager=Pager(code="013"),
+            active_assignments=assignments,
+            occurred_at=assigned_at,
+        )
+
+
+def test_family_reuses_existing_pager_assignment_in_same_service() -> None:
+    family = make_family()
+    service = make_service()
+    pager = Pager(code="012")
+    assignments: list[PagerAssignment] = []
+
+    first = assign_pager(
+        family_id=family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 51),
+    )
+
+    second = assign_pager(
+        family_id=family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 55),
+    )
+
+    assert second is first
+    assert len(assignments) == 1
 
 
 def test_releasing_pager_assignment_keeps_history() -> None:
-    attendance = _checked_in()
-    pager = Pager(code="12")
+    family = make_family()
+    service = make_service()
+    pager = Pager(code="012")
     assignments: list[PagerAssignment] = []
-    assignment = assign_pager(
-        attendance, pager, assignments, datetime(2026, 9, 20, 9, 51)
-    )
-    released_at = datetime(2026, 9, 20, 11, 0)
 
+    assignment = assign_pager(
+        family_id=family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 51),
+    )
+
+    released_at = datetime(2026, 9, 20, 11, 0)
     assignment.release(released_at)
 
     assert assignment.released_at == released_at
-    assert assignment.is_active is False
+    assert not assignment.is_active
     assert assignment in assignments
 
 
 def test_inactive_pager_cannot_be_assigned() -> None:
-    attendance = _checked_in()
-    pager = Pager(code="12")
+    family = make_family()
+    service = make_service()
+    pager = Pager(code="012")
     pager.deactivate()
 
     with pytest.raises(PagerInactiveError):
         assign_pager(
-            attendance,
-            pager,
-            [],
-            datetime(2026, 9, 20, 9, 51),
+            family_id=family.id,
+            service_id=service.id,
+            pager=pager,
+            active_assignments=[],
+            occurred_at=datetime(2026, 9, 20, 9, 51),
+        )
+
+
+def test_released_pager_can_be_assigned_to_another_family() -> None:
+    first_family = make_family()
+    second_family = make_family()
+    service = make_service()
+    pager = Pager(code="012")
+    assignments: list[PagerAssignment] = []
+
+    first = assign_pager(
+        family_id=first_family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 51),
+    )
+
+    first.release(datetime(2026, 9, 20, 11, 0))
+
+    second = assign_pager(
+        family_id=second_family.id,
+        service_id=service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 11, 5),
+    )
+
+    assert second.id != first.id
+    assert second.family_id == second_family.id
+    assert len(assignments) == 2
+    assert not first.is_active
+    assert second.is_active
+
+
+def test_same_family_cannot_reuse_pager_assigned_to_another_service() -> None:
+    family = make_family()
+    first_service = make_service()
+    second_service = make_service()
+    pager = Pager(code="012")
+    assignments: list[PagerAssignment] = []
+
+    assign_pager(
+        family_id=family.id,
+        service_id=first_service.id,
+        pager=pager,
+        active_assignments=assignments,
+        occurred_at=datetime(2026, 9, 20, 9, 51),
+    )
+
+    with pytest.raises(PagerAlreadyAssignedError):
+        assign_pager(
+            family_id=family.id,
+            service_id=second_service.id,
+            pager=pager,
+            active_assignments=assignments,
+            occurred_at=datetime(2026, 9, 20, 10, 0),
         )

@@ -7,8 +7,10 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -223,21 +225,43 @@ class PagerAssignmentModel(Base):
             "released_at IS NULL OR released_at >= assigned_at",
             name="ck_pager_assignments_valid_release",
         ),
+        Index(
+            "uq_active_pager_assignment",
+            "pager_id",
+            unique=True,
+            sqlite_where=text("released_at IS NULL"),
+        ),
+        Index(
+            "uq_active_family_service_pager",
+            "family_id",
+            "service_id",
+            unique=True,
+            sqlite_where=text("released_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
+
     pager_id: Mapped[UUID] = mapped_column(
         ForeignKey("pagers.id"),
         nullable=False,
     )
-    attendance_id: Mapped[UUID] = mapped_column(
-        ForeignKey("attendances.id"),
+
+    family_id: Mapped[UUID] = mapped_column(
+        ForeignKey("families.id"),
         nullable=False,
     )
+
+    service_id: Mapped[UUID] = mapped_column(
+        ForeignKey("services.id"),
+        nullable=False,
+    )
+
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
     )
+
     released_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,

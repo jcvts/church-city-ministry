@@ -2686,3 +2686,101 @@ def test_update_child_guardian_rejects_empty_patch(
     )
 
     assert response.status_code == 422
+
+
+def test_delete_child_guardian_returns_204(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    family = FamilyModel(
+        id=uuid4(),
+        is_active=True,
+    )
+    verification_session.add(family)
+    verification_session.flush()
+
+    child = ChildModel(
+        id=uuid4(),
+        family_id=family.id,
+        full_name="Maria Silva",
+        birth_date=date(2021, 5, 10),
+        is_active=True,
+    )
+
+    guardian = GuardianModel(
+        id=uuid4(),
+        family_id=family.id,
+        full_name="João Silva",
+        is_active=True,
+    )
+
+    verification_session.add_all([child, guardian])
+    verification_session.flush()
+
+    link = ChildGuardianModel(
+        id=uuid4(),
+        child_id=child.id,
+        guardian_id=guardian.id,
+        relationship="Uncle",
+        authorized_pickup=True,
+    )
+
+    verification_session.add(link)
+    verification_session.commit()
+
+    link_id = link.id
+    child_id = child.id
+    guardian_id = guardian.id
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.delete(
+        f"/api/children/{child.id}/guardians/{guardian.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+    verification_session.expire_all()
+
+    assert verification_session.get(ChildGuardianModel, link_id) is None
+    assert verification_session.get(ChildModel, child_id) is not None
+    assert verification_session.get(GuardianModel, guardian_id) is not None
+
+
+def test_delete_nonexistent_child_guardian_returns_404(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.delete(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child guardian link not found",
+    }
+
+
+def test_delete_child_guardian_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.delete(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+    )
+
+    assert response.status_code == 401

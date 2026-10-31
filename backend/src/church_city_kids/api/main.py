@@ -75,6 +75,13 @@ from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
 )
+from church_city_kids.application.remove_child_guardian import (
+    ChildGuardianNotFoundError as RemoveChildGuardianNotFoundError,
+)
+from church_city_kids.application.remove_child_guardian import (
+    RemoveChildGuardianRequest,
+    remove_child_guardian,
+)
 from church_city_kids.application.update_child_guardian import (
     ChildGuardianNotFoundError,
     UpdateChildGuardianRequest,
@@ -108,6 +115,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
+    SqlAlchemyRemoveChildGuardianRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUserRepository,
 )
@@ -317,6 +325,40 @@ def update_child_guardian_endpoint(
         raise
 
     return {"status": "updated"}
+
+
+@app.delete(
+    "/api/children/{child_id}/guardians/{guardian_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_child_guardian_endpoint(
+    child_id: UUID,
+    guardian_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> None:
+    repository = SqlAlchemyRemoveChildGuardianRepository(session)
+
+    try:
+        remove_child_guardian(
+            RemoveChildGuardianRequest(
+                child_id=child_id,
+                guardian_id=guardian_id,
+            ),
+            repository,
+        )
+        session.commit()
+
+    except RemoveChildGuardianNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child guardian link not found",
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
 
 
 @app.post(

@@ -102,3 +102,10 @@ def link_child_guardian(
     )
     existing.append(link)
     return link
+
+
+def remove_child_guardian(
+    link: ChildGuardian,
+    existing: list[ChildGuardian],
+) -> None:
+    existing.remove(link)

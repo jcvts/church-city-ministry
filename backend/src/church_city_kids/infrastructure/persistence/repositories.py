@@ -662,3 +662,42 @@ class SqlAlchemyUpdateChildGuardianRepository:
 
         model.relationship = link.relationship
         model.authorized_pickup = link.authorized_pickup
+
+
+class SqlAlchemyRemoveChildGuardianRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_child_guardian(
+        self,
+        child_id: UUID,
+        guardian_id: UUID,
+    ) -> ChildGuardian | None:
+        model = self._session.scalar(
+            select(ChildGuardianModel).where(
+                ChildGuardianModel.child_id == child_id,
+                ChildGuardianModel.guardian_id == guardian_id,
+            )
+        )
+
+        if model is None:
+            return None
+
+        return ChildGuardian(
+            id=model.id,
+            child_id=model.child_id,
+            guardian_id=model.guardian_id,
+            relationship=model.relationship,
+            authorized_pickup=model.authorized_pickup,
+        )
+
+    def delete_child_guardian(
+        self,
+        link: ChildGuardian,
+    ) -> None:
+        model = self._session.get(ChildGuardianModel, link.id)
+
+        if model is None:
+            raise ValueError("Child guardian link not found")
+
+        self._session.delete(model)

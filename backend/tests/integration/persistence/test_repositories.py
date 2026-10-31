@@ -33,6 +33,10 @@ from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
 )
+from church_city_kids.application.update_child_guardian import (
+    UpdateChildGuardianRequest,
+    update_child_guardian,
+)
 from church_city_kids.domain.errors import (
     ChildAlreadyCheckedInError,
     DuplicateChildGuardianError,
@@ -71,6 +75,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyListChildrenRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
+    SqlAlchemyUpdateChildGuardianRepository,
 )
 
 
@@ -1541,5 +1546,150 @@ def test_add_new_guardian_to_existing_child_persists(
 
         assert len(session.scalars(select(FamilyModel)).all()) == 1
         assert len(session.scalars(select(ChildModel)).all()) == 1
+
+    engine.dispose()
+
+
+def test_update_child_guardian_persists_changes(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Existing Guardian",
+    )
+    link = ChildGuardian(
+        child_id=child.id,
+        guardian_id=guardian.id,
+        relationship="Uncle",
+        authorized_pickup=False,
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyUpdateChildGuardianRepository(session)
+
+        update_child_guardian(
+            UpdateChildGuardianRequest(
+                child_id=child.id,
+                guardian_id=guardian.id,
+                relationship="Grandfather",
+                authorized_pickup=True,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        persisted_link = session.get(ChildGuardianModel, link.id)
+
+        assert persisted_link is not None
+        assert persisted_link.child_id == child.id
+        assert persisted_link.guardian_id == guardian.id
+        assert persisted_link.relationship == "Grandfather"
+        assert persisted_link.authorized_pickup is True
+
+    engine.dispose()
+
+
+def test_update_child_guardian_does_not_affect_other_children(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+
+    first_child = Child(
+        family_id=family.id,
+        full_name="First Child",
+        birth_date=date(2021, 1, 1),
+    )
+    second_child = Child(
+        family_id=family.id,
+        full_name="Second Child",
+        birth_date=date(2022, 1, 1),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Shared Guardian",
+    )
+
+    first_link = ChildGuardian(
+        child_id=first_child.id,
+        guardian_id=guardian.id,
+        relationship="Uncle",
+        authorized_pickup=False,
+    )
+    second_link = ChildGuardian(
+        child_id=second_child.id,
+        guardian_id=guardian.id,
+        relationship="Uncle",
+        authorized_pickup=False,
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(first_child)
+        ChildRepository(session).add(second_child)
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(first_link)
+        ChildGuardianRepository(session).add(second_link)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyUpdateChildGuardianRepository(session)
+
+        update_child_guardian(
+            UpdateChildGuardianRequest(
+                child_id=first_child.id,
+                guardian_id=guardian.id,
+                authorized_pickup=True,
+            ),
+            repository,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        persisted_first = session.get(
+            ChildGuardianModel,
+            first_link.id,
+        )
+        persisted_second = session.get(
+            ChildGuardianModel,
+            second_link.id,
+        )
+
+        assert persisted_first is not None
+        assert persisted_second is not None
+
+        assert persisted_first.authorized_pickup is True
+        assert persisted_second.authorized_pickup is False
+
+        assert persisted_first.relationship == "Uncle"
+        assert persisted_second.relationship == "Uncle"
 
     engine.dispose()

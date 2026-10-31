@@ -2463,3 +2463,226 @@ def test_add_child_guardian_rejects_missing_guardian_input(
     assert verification_session.scalar(
         select(func.count()).select_from(ChildGuardianModel)
     ) == 0
+
+
+def test_update_child_guardian_pickup_authorization_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+    link_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Existing Guardian",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildGuardianModel(
+            id=link_id,
+            child_id=child_id,
+            guardian_id=guardian_id,
+            relationship="Uncle",
+            authorized_pickup=False,
+        )
+    )
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/children/{child_id}/guardians/{guardian_id}",
+        headers=headers,
+        json={
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 200
+
+    verification_session.expire_all()
+
+    link = verification_session.get(
+        ChildGuardianModel,
+        link_id,
+    )
+
+    assert link is not None
+    assert link.relationship == "Uncle"
+    assert link.authorized_pickup is True
+
+
+def test_update_child_guardian_clears_relationship_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+    link_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Existing Guardian",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildGuardianModel(
+            id=link_id,
+            child_id=child_id,
+            guardian_id=guardian_id,
+            relationship="Uncle",
+            authorized_pickup=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/children/{child_id}/guardians/{guardian_id}",
+        headers=headers,
+        json={
+            "relationship": None,
+        },
+    )
+
+    assert response.status_code == 200
+
+    verification_session.expire_all()
+
+    link = verification_session.get(
+        ChildGuardianModel,
+        link_id,
+    )
+
+    assert link is not None
+    assert link.relationship is None
+    assert link.authorized_pickup is True
+
+
+def test_update_child_guardian_returns_404_for_missing_link(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+        headers=headers,
+        json={
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child guardian link not found",
+    }
+
+
+def test_update_child_guardian_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.patch(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+        json={
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_update_child_guardian_rejects_null_pickup_authorization(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+        headers=headers,
+        json={
+            "authorized_pickup": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_child_guardian_rejects_empty_patch(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        f"/api/children/{uuid4()}/guardians/{uuid4()}",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 422

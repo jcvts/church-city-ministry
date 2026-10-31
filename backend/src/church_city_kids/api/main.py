@@ -31,6 +31,7 @@ from church_city_kids.api.schemas import (
     RegisterChildBody,
     RegisterChildResponse,
     RoomResponse,
+    UpdateChildGuardianBody,
     UpdateMinistrySettingsBody,
 )
 from church_city_kids.application.add_child_guardian import (
@@ -74,6 +75,11 @@ from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
 )
+from church_city_kids.application.update_child_guardian import (
+    ChildGuardianNotFoundError,
+    UpdateChildGuardianRequest,
+    update_child_guardian,
+)
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
     CheckOutBeforeCheckInError,
@@ -102,6 +108,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
+    SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUserRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
@@ -270,6 +277,46 @@ def add_child_guardian_endpoint(
         raise
 
     return AddChildGuardianResponse(link_id=result.link_id)
+
+
+@app.patch(
+    "/api/children/{child_id}/guardians/{guardian_id}",
+    status_code=status.HTTP_200_OK,
+)
+def update_child_guardian_endpoint(
+    child_id: UUID,
+    guardian_id: UUID,
+    body: UpdateChildGuardianBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> dict[str, str]:
+    repository = SqlAlchemyUpdateChildGuardianRepository(session)
+
+    updates = body.model_dump(exclude_unset=True)
+
+    try:
+        update_child_guardian(
+            UpdateChildGuardianRequest(
+                child_id=child_id,
+                guardian_id=guardian_id,
+                **updates,
+            ),
+            repository,
+        )
+        session.commit()
+
+    except ChildGuardianNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail="Child guardian link not found",
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return {"status": "updated"}
 
 
 @app.post(

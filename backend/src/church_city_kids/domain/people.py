@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 from church_city_kids.domain.errors import DuplicateChildGuardianError
 
+_UNSET = object()
+
 
 def age_in_years(birth_date: date, on_date: date) -> int:
     years = on_date.year - birth_date.year
@@ -55,6 +57,20 @@ class ChildGuardian:
     id: UUID = field(default_factory=uuid4)
     relationship: str | None = None
     authorized_pickup: bool = True
+
+
+def update_child_guardian(
+    link: ChildGuardian,
+    *,
+    relationship: str | None | object = _UNSET,
+    authorized_pickup: bool | object = _UNSET,
+) -> None:
+    if relationship is not _UNSET:
+        if relationship is None or isinstance(relationship, str):
+            link.relationship = relationship
+
+    if isinstance(authorized_pickup, bool):
+        link.authorized_pickup = authorized_pickup
 
 
 @dataclass

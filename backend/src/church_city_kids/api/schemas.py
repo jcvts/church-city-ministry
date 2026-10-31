@@ -138,3 +138,25 @@ class AddChildGuardianBody(BaseModel):
 
 class AddChildGuardianResponse(BaseModel):
     link_id: UUID
+
+
+class UpdateChildGuardianBody(BaseModel):
+    relationship: str | None = None
+    authorized_pickup: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> "UpdateChildGuardianBody":
+        if not self.model_fields_set:
+            raise ValueError(
+                "At least one field must be provided"
+            )
+
+        if (
+            "authorized_pickup" in self.model_fields_set
+            and self.authorized_pickup is None
+        ):
+            raise ValueError(
+                "authorized_pickup cannot be null"
+            )
+
+        return self

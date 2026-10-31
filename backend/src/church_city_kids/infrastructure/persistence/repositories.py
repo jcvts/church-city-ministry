@@ -1,6 +1,7 @@
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from church_city_kids.application.check_in import CheckInRepository
@@ -23,15 +24,19 @@ from church_city_kids.domain.scheduling import (
     normalize_room_name,
 )
 from church_city_kids.domain.scheduling import Session as DomainSession
+from church_city_kids.domain.settings import MinistrySettings
+from church_city_kids.domain.user import User, UserRole
 from church_city_kids.infrastructure.persistence.models import (
     AttendanceModel,
     ChildGuardianModel,
     ChildModel,
     FamilyModel,
     GuardianModel,
+    MinistrySettingsModel,
     RoomModel,
     ServiceModel,
     SessionModel,
+    UserModel,
 )
 
 
@@ -434,4 +439,79 @@ class SqlAlchemyCreateSessionRepository:
                 max_age_years=session.max_age_years,
                 status=session.status.value,
             )
+        )
+
+
+class SqlAlchemyMinistrySettingsRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get(self) -> MinistrySettings | None:
+        model = self._session.get(MinistrySettingsModel, 1)
+
+        if model is None:
+            return None
+
+        return MinistrySettings(
+            pager_required=model.pager_required,
+        )
+
+
+    def save(self, settings: MinistrySettings) -> None:
+        model = self._session.get(MinistrySettingsModel, 1)
+
+        if model is None:
+            raise ValueError("Ministry settings not found")
+
+        model.pager_required = settings.pager_required
+
+
+class SqlAlchemyUserRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_by_username(self, username: str) -> User | None:
+        statement = select(UserModel).where(
+            func.lower(UserModel.username) == username.lower()
+        )
+
+        model = self._session.scalar(statement)
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+    
+    def get_by_id(self, user_id: UUID) -> User | None:
+        model = self._session.get(UserModel, user_id)
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
+    def add(self, user: User) -> None:
+        self._session.add(
+            UserModel(
+                id=user.id,
+                username=user.username,
+                password_hash=user.password_hash,
+                is_active=user.is_active,
+                role=user.role,
+            )
+        )
+    
+    @staticmethod
+    def _to_domain(model: UserModel) -> User:
+        role = model.role
+
+        if role not in ("admin", "volunteer"):
+            raise ValueError(f"Invalid user role: {role}")
+
+        return User(
+            id=model.id,
+            username=model.username,
+            password_hash=model.password_hash,
+            is_active=model.is_active,
+            role=cast(UserRole, role),
         )

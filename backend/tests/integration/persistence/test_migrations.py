@@ -29,11 +29,13 @@ def test_migrations_create_expected_schema(tmp_path: Path) -> None:
         "children",
         "families",
         "guardians",
+        "ministry_settings",
         "pager_assignments",
         "pagers",
         "rooms",
         "services",
         "sessions",
+        "users",
         "volunteer_assignments",
         "volunteers",
     }
@@ -401,3 +403,248 @@ def test_checkout_guardian_migration_preserves_existing_attendances(
         assert attendance.checked_out_at is not None
 
     engine.dispose()
+
+
+def test_ministry_settings_migration_creates_default_settings(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "settings_migration.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    with engine.connect() as connection:
+        settings = connection.execute(
+            text(
+                "SELECT id, pager_required "
+                "FROM ministry_settings"
+            )
+        ).one()
+
+    assert settings.id == 1
+    assert settings.pager_required == 1
+
+    engine.dispose()
+
+
+def test_users_migration_enforces_case_insensitive_username(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "users_migration_test.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            indexes = connection.execute(
+                text("PRAGMA index_list('users')")
+            ).mappings().all()
+
+        with engine.connect() as connection:
+            indexes = connection.execute(
+                text("PRAGMA index_list('users')")
+            ).mappings().all()
+
+        assert any(
+            index["name"] == "uq_users_username_lower"
+            and index["unique"] == 1
+            for index in indexes
+        )
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO users
+                        (id, username, password_hash, is_active)
+                    VALUES
+                        (:id, :username, :password_hash, :is_active)
+                    """
+                ),
+                {
+                    "id": uuid4().hex,
+                    "username": "Admin",
+                    "password_hash": "test-hash",
+                    "is_active": True,
+                },
+            )
+
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO users
+                            (id, username, password_hash, is_active)
+                        VALUES
+                            (:id, :username, :password_hash, :is_active)
+                        """
+                    ),
+                    {
+                        "id": uuid4().hex,
+                        "username": "admin",
+                        "password_hash": "another-test-hash",
+                        "is_active": True,
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+def test_user_role_migration_preserves_existing_users(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "user_role_migration.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    # Apply migrations up to the revision before the role column.
+    command.upgrade(config, "43e33513f120")
+
+    engine = create_engine(database_url)
+    user_id = uuid4().hex
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO users
+                        (id, username, password_hash, is_active)
+                    VALUES
+                        (:id, :username, :password_hash, :is_active)
+                    """
+                ),
+                {
+                    "id": user_id,
+                    "username": "existing.admin",
+                    "password_hash": "existing-hash",
+                    "is_active": True,
+                },
+            )
+    finally:
+        engine.dispose()
+
+    # Apply only the new role migration.
+    command.upgrade(config, "460e5d52a242")
+
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            user = connection.execute(
+                text(
+                    """
+                    SELECT id, username, password_hash, is_active, role
+                    FROM users
+                    WHERE id = :id
+                    """
+                ),
+                {"id": user_id},
+            ).one()
+
+            columns = {
+                column["name"]: column
+                for column in inspect(connection).get_columns("users")
+            }
+
+        assert user.id == user_id
+        assert user.username == "existing.admin"
+        assert user.password_hash == "existing-hash"
+        assert user.is_active == 1
+        assert user.role == "volunteer"
+
+        assert "role" in columns
+        assert columns["role"]["nullable"] is False
+    finally:
+        engine.dispose()
+
+
+def test_user_role_migration_downgrade_preserves_users(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "user_role_downgrade.db"
+    database_url = f"sqlite:///{database_path}"
+
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+
+    command.upgrade(config, "460e5d52a242")
+
+    engine = create_engine(database_url)
+    user_id = uuid4().hex
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO users
+                        (id, username, password_hash, is_active, role)
+                    VALUES
+                        (:id, :username, :password_hash, :is_active, :role)
+                    """
+                ),
+                {
+                    "id": user_id,
+                    "username": "test.admin",
+                    "password_hash": "test-hash",
+                    "is_active": True,
+                    "role": "admin",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    command.downgrade(config, "43e33513f120")
+
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("users")
+            }
+
+            user = connection.execute(
+                text(
+                    """
+                    SELECT id, username, password_hash, is_active
+                    FROM users
+                    WHERE id = :id
+                    """
+                ),
+                {"id": user_id},
+            ).one()
+
+            indexes = connection.execute(
+                text("PRAGMA index_list('users')")
+            ).mappings().all()
+
+        assert "role" not in columns
+        assert user.id == user_id
+        assert user.username == "test.admin"
+        assert user.password_hash == "test-hash"
+        assert user.is_active == 1
+
+        assert any(
+            index["name"] == "uq_users_username_lower"
+            and index["unique"] == 1
+            for index in indexes
+        )
+    finally:
+        engine.dispose()

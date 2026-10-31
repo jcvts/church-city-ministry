@@ -3,7 +3,11 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy.orm import Session
 
-from church_city_kids.api.dependencies import get_db_session
+from church_city_kids.api.dependencies import (
+    get_db_session,
+    get_jwt_token_service,
+    require_admin,
+)
 from church_city_kids.api.schemas import (
     CheckInBody,
     CheckInResponse,
@@ -15,10 +19,14 @@ from church_city_kids.api.schemas import (
     CreateServiceResponse,
     CreateSessionBody,
     CreateSessionResponse,
+    LoginBody,
+    LoginResponse,
     RegisterChildBody,
     RegisterChildResponse,
     RoomResponse,
+    UpdateMinistrySettingsBody,
 )
+from church_city_kids.application.authenticate_user import authenticate_user
 from church_city_kids.application.check_in import (
     CheckInRequest,
     ChildNotFoundError,
@@ -63,6 +71,7 @@ from church_city_kids.domain.errors import (
     RoomNameAlreadyExistsError,
     SessionNotOpenError,
 )
+from church_city_kids.domain.user import User
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
@@ -70,8 +79,12 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
     SqlAlchemyListRoomsRepository,
+    SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
+    SqlAlchemyUserRepository,
 )
+from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
+from church_city_kids.infrastructure.security.passwords import PasswordHasher
 
 app = FastAPI(
     title="Church City Kids API",
@@ -396,3 +409,59 @@ def check_out_child_endpoint(
         raise
 
     return CheckOutResponse(attendance_id=result.attendance_id)
+
+
+@app.patch("/api/admin/settings")
+def update_ministry_settings_endpoint(
+    body: UpdateMinistrySettingsBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, bool]:
+    repository = SqlAlchemyMinistrySettingsRepository(db_session)
+    settings = repository.get()
+
+    if settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ministry settings not found",
+        )
+
+    try:
+        settings.pager_required = body.pager_required
+        repository.save(settings)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return {"pager_required": settings.pager_required}
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+def login_endpoint(
+    body: LoginBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+    token_service: Annotated[
+        JwtTokenService,
+        Depends(get_jwt_token_service),
+    ],
+) -> LoginResponse:
+    repository = SqlAlchemyUserRepository(db_session)
+
+    user = authenticate_user(
+        username=body.username,
+        password=body.password,
+        repository=repository,
+        password_hasher=PasswordHasher(),
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return LoginResponse(
+        access_token=token_service.create_access_token(user.id),
+    )

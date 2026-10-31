@@ -1,13 +1,18 @@
 from collections.abc import Generator
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from church_city_kids.api.dependencies import get_db_session
+from church_city_kids.api.dependencies import (
+    get_db_session,
+    get_jwt_token_service,
+)
 from church_city_kids.api.main import app
 from church_city_kids.infrastructure.persistence.database import (
     create_sqlite_engine,
@@ -19,9 +24,17 @@ from church_city_kids.infrastructure.persistence.models import (
     ChildModel,
     FamilyModel,
     GuardianModel,
+    MinistrySettingsModel,
     RoomModel,
     ServiceModel,
     SessionModel,
+    UserModel,
+)
+from church_city_kids.infrastructure.security.jwt_tokens import (
+    JwtTokenService,
+)
+from church_city_kids.infrastructure.security.passwords import (
+    PasswordHasher,
 )
 
 
@@ -129,6 +142,13 @@ def api_client(
 
     app.dependency_overrides[get_db_session] = override_get_db_session
 
+    app.dependency_overrides[get_jwt_token_service] = (
+        lambda: JwtTokenService(
+            secret_key="test-secret-key-with-at-least-32-bytes",
+            access_token_ttl=timedelta(minutes=30),
+        )
+    )
+
     try:
         with TestClient(
             app,
@@ -153,6 +173,14 @@ def test_register_child(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+
+    verification_session.add(
+        MinistrySettingsModel(
+            id=1,
+            pager_required=True,
+        )
+    )
+    verification_session.commit()
 
     response = client.post(
         "/api/children",
@@ -1040,3 +1068,492 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
     assert attendance is not None
     assert attendance.checked_out_at is None
     assert verification_session.query(AttendanceModel).count() == 1
+
+
+def test_update_ministry_settings_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+    )
+
+    assert response.status_code == 401
+
+
+def test_update_ministry_settings_rejects_invalid_token(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.patch(
+        "/api/admin/settings",
+        headers={
+            "Authorization": "Bearer invalid-token",
+        },
+        json={"pager_required": False},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_settings_rejects_token_for_unknown_user(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(uuid4())
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_settings_rejects_authenticated_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    verification_session.add(
+        MinistrySettingsModel(
+            id=1,
+            pager_required=True,
+        )
+    )
+    verification_session.commit()
+
+    user_id = uuid4()
+
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="reception.volunteer",
+            password_hash="test-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(user_id)
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+
+    verification_session.expire_all()
+    settings = verification_session.get(MinistrySettingsModel, 1)
+
+    assert settings is not None
+    assert settings.pager_required is True
+
+
+def test_admin_settings_returns_404_when_settings_missing(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    user_id = uuid4()
+
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="reception.admin",
+            password_hash="test-hash",
+            is_active=True,
+            role="admin",
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(user_id)
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Ministry settings not found"
+
+
+def test_admin_settings_rejects_token_for_inactive_user(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    user_id = uuid4()
+
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="inactive.admin",
+            password_hash="test-hash",
+            is_active=False,
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(user_id)
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == (
+        "Invalid or expired authentication token"
+    )
+
+
+def test_admin_settings_rejects_invalid_jwt_signature(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    token_service = JwtTokenService(
+        secret_key="different-test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(uuid4())
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == (
+        "Invalid or expired authentication token"
+    )
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_admin_settings_rejects_expired_jwt(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(uuid4())
+
+    payload = jwt.decode(
+        token,
+        "test-secret-key-with-at-least-32-bytes",
+        algorithms=["HS256"],
+        options={"verify_exp": False},
+    )
+
+    payload["exp"] = datetime(2020, 1, 1, tzinfo=UTC)
+
+    expired_token = jwt.encode(
+        payload,
+        "test-secret-key-with-at-least-32-bytes",
+        algorithm="HS256",
+    )
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == (
+        "Invalid or expired authentication token"
+    )
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_login_returns_access_token_for_valid_credentials(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    user_id = uuid4()
+    password = "strong-test-password"
+
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="reception.admin",
+            password_hash=PasswordHasher().hash(password),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "username": "reception.admin",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["token_type"] == "bearer"
+    assert isinstance(body["access_token"], str)
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    assert (
+        token_service.decode_access_token(body["access_token"])
+        == user_id
+    )
+
+
+def test_login_rejects_incorrect_password(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    verification_session.add(
+        UserModel(
+            id=uuid4(),
+            username="reception.admin",
+            password_hash=PasswordHasher().hash("correct-password"),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "username": "reception.admin",
+            "password": "wrong-password",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_login_rejects_unknown_username(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "username": "unknown.user",
+            "password": "any-password",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_login_rejects_inactive_user(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    password = "correct-password"
+
+    verification_session.add(
+        UserModel(
+            id=uuid4(),
+            username="inactive.admin",
+            password_hash=PasswordHasher().hash(password),
+            is_active=False,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "username": "inactive.admin",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_admin_can_update_pager_required(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    verification_session.add(
+        MinistrySettingsModel(
+            id=1,
+            pager_required=True,
+        )
+    )
+    verification_session.commit()
+
+    user_id = uuid4()
+
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="settings.admin",
+            password_hash="test-hash",
+            is_active=True,
+            role="admin",
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    token = token_service.create_access_token(user_id)
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+
+    verification_session.expire_all()
+    settings = verification_session.get(MinistrySettingsModel, 1)
+
+    assert settings is not None
+    assert settings.pager_required is False
+
+
+def test_admin_settings_rejects_invalid_pager_required(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    verification_session.add(
+        MinistrySettingsModel(id=1, pager_required=True)
+    )
+
+    user_id = uuid4()
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="validation.admin",
+            password_hash="test-hash",
+            is_active=True,
+            role="admin",
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    token = token_service.create_access_token(user_id)
+
+    response = client.patch(
+        "/api/admin/settings",
+        json={"pager_required": "false"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 422
+
+    verification_session.expire_all()
+    settings = verification_session.get(MinistrySettingsModel, 1)
+
+    assert settings is not None
+    assert settings.pager_required is True
+
+
+def test_admin_settings_rolls_back_when_commit_fails(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    verification_session.add(
+        MinistrySettingsModel(id=1, pager_required=True)
+    )
+
+    user_id = uuid4()
+    verification_session.add(
+        UserModel(
+            id=user_id,
+            username="rollback.admin",
+            password_hash="test-hash",
+            is_active=True,
+            role="admin",
+        )
+    )
+    verification_session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    token = token_service.create_access_token(user_id)
+
+    with (
+        patch.object(Session, "commit", side_effect=RuntimeError("Database error")),
+        patch.object(Session, "rollback", autospec=True) as rollback_mock,
+    ):
+        response = client.patch(
+            "/api/admin/settings",
+            json={"pager_required": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 500
+        rollback_mock.assert_called_once()
+
+    verification_session.expire_all()
+    settings = verification_session.get(MinistrySettingsModel, 1)
+    assert settings is not None
+    assert settings.pager_required is True

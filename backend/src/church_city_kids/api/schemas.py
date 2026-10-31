@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 
 class RegisterChildBody(BaseModel):
@@ -71,3 +71,17 @@ class CheckOutBody(BaseModel):
 
 class CheckOutResponse(BaseModel):
     attendance_id: UUID
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UpdateMinistrySettingsBody(BaseModel):
+    pager_required: StrictBool

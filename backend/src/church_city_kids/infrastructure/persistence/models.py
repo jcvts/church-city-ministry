@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     text,
@@ -265,4 +266,57 @@ class PagerAssignmentModel(Base):
     released_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
+    )
+
+
+class MinistrySettingsModel(Base):
+    __tablename__ = "ministry_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "id = 1",
+            name="ck_ministry_settings_singleton",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    pager_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+
+class UserModel(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "uq_users_username_lower",
+            text("lower(username)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+    )
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+    role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="volunteer",
     )

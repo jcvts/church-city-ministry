@@ -11,6 +11,8 @@ from church_city_kids.api.dependencies import (
     require_bearer_token,
 )
 from church_city_kids.api.schemas import (
+    AddChildGuardianBody,
+    AddChildGuardianResponse,
     CheckInBody,
     CheckInResponse,
     CheckOutBody,
@@ -30,6 +32,14 @@ from church_city_kids.api.schemas import (
     RegisterChildResponse,
     RoomResponse,
     UpdateMinistrySettingsBody,
+)
+from church_city_kids.application.add_child_guardian import (
+    AddChildGuardianRequest,
+    GuardianNotFoundError,
+    add_child_guardian,
+)
+from church_city_kids.application.add_child_guardian import (
+    ChildNotFoundError as AddGuardianChildNotFoundError,
 )
 from church_city_kids.application.authenticate_user import authenticate_user
 from church_city_kids.application.check_in import (
@@ -70,6 +80,7 @@ from church_city_kids.domain.errors import (
     ChildAgeOutOfRangeError,
     ChildAlreadyCheckedInError,
     ChildInactiveError,
+    DuplicateChildGuardianError,
     FamilyInactiveError,
     GuardianNotAuthorizedForPickupError,
     InvalidAgeRangeError,
@@ -80,6 +91,7 @@ from church_city_kids.domain.errors import (
 )
 from church_city_kids.domain.user import User
 from church_city_kids.infrastructure.persistence.repositories import (
+    SqlAlchemyAddChildGuardianRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
     SqlAlchemyCreateRoomRepository,
@@ -203,6 +215,59 @@ def get_child_details_endpoint(
             for guardian in result.guardians
         ],
     )
+
+
+@app.post(
+    "/api/children/{child_id}/guardians",
+    response_model=AddChildGuardianResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_child_guardian_endpoint(
+    child_id: UUID,
+    body: AddChildGuardianBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> AddChildGuardianResponse:
+    repository = SqlAlchemyAddChildGuardianRepository(session)
+
+    try:
+        result = add_child_guardian(
+            AddChildGuardianRequest(
+                child_id=child_id,
+                guardian_id=body.guardian_id,
+                relationship=body.relationship,
+                authorized_pickup=body.authorized_pickup,
+            ),
+            repository,
+        )
+        session.commit()
+
+    except AddGuardianChildNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found",
+        ) from exc
+
+    except GuardianNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Guardian not found",
+        ) from exc
+
+    except DuplicateChildGuardianError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Guardian already linked to child",
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return AddChildGuardianResponse(link_id=result.link_id)
 
 
 @app.post(

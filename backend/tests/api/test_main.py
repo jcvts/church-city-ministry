@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from church_city_kids.api.dependencies import (
@@ -1996,3 +1997,308 @@ def test_get_child_details_requires_authentication(
     )
 
     assert response.status_code == 401
+
+
+def test_add_existing_guardian_to_child(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    child_family_id = uuid4()
+    guardian_family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add_all(
+        [
+            FamilyModel(id=child_family_id, is_active=True),
+            FamilyModel(id=guardian_family_id, is_active=True),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=child_family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=guardian_family_id,
+                full_name="Maria Silva",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(guardian_id),
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    link_id = UUID(data["link_id"])
+
+    link = verification_session.get(ChildGuardianModel, link_id)
+
+    assert link is not None
+    assert link.child_id == child_id
+    assert link.guardian_id == guardian_id
+    assert link.relationship == "Grandmother"
+    assert link.authorized_pickup is True
+
+
+def test_add_child_guardian_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        json={
+            "guardian_id": str(guardian_id),
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 401
+    assert (
+        verification_session.query(ChildGuardianModel).count()
+        == 0
+    )
+
+
+def test_add_child_guardian_returns_409_for_duplicate_link(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+    existing_link_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildGuardianModel(
+            id=existing_link_id,
+            child_id=child_id,
+            guardian_id=guardian_id,
+            relationship="Mother",
+            authorized_pickup=False,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(guardian_id),
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Guardian already linked to child",
+    }
+
+    verification_session.expire_all()
+
+    links = verification_session.scalars(
+        select(ChildGuardianModel)
+    ).all()
+
+    assert len(links) == 1
+    assert links[0].id == existing_link_id
+    assert links[0].relationship == "Mother"
+    assert links[0].authorized_pickup is False
+
+
+def test_add_child_guardian_returns_404_when_child_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        f"/api/children/{uuid4()}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(uuid4()),
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child not found",
+    }
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(ChildGuardianModel)
+    ) == 0
+
+
+def test_add_child_guardian_returns_404_when_guardian_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Test Child",
+            birth_date=date(2021, 1, 1),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(uuid4()),
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Guardian not found",
+    }
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(ChildGuardianModel)
+    ) == 0
+
+
+def test_add_child_guardian_defaults_to_unauthorized_pickup(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(guardian_id),
+            "relationship": "Grandmother",
+        },
+    )
+
+    assert response.status_code == 201
+
+    link_id = UUID(response.json()["link_id"])
+
+    verification_session.expire_all()
+    link = verification_session.get(ChildGuardianModel, link_id)
+
+    assert link is not None
+    assert link.authorized_pickup is False
+    assert link.relationship == "Grandmother"

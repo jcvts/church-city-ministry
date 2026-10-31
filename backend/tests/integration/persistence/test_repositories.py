@@ -6,6 +6,10 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from church_city_kids.application.add_child_guardian import (
+    AddChildGuardianRequest,
+    add_child_guardian,
+)
 from church_city_kids.application.check_in import (
     CheckInRequest,
     check_in_child,
@@ -31,6 +35,7 @@ from church_city_kids.application.registration import (
 )
 from church_city_kids.domain.errors import (
     ChildAlreadyCheckedInError,
+    DuplicateChildGuardianError,
     GuardianNotAuthorizedForPickupError,
 )
 from church_city_kids.domain.people import (
@@ -57,6 +62,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     ChildRepository,
     FamilyRepository,
     GuardianRepository,
+    SqlAlchemyAddChildGuardianRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
     SqlAlchemyCreateRoomRepository,
@@ -1357,3 +1363,121 @@ def test_check_out_child_rejects_unauthorized_guardian_from_another_family(
         assert loaded_attendance is not None
         assert loaded_attendance.checked_out_at is None
         assert loaded_attendance.checked_out_by_guardian_id is None
+
+
+def test_add_child_guardian_persists_cross_family_link(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    child_family = Family()
+    guardian_family = Family()
+
+    child = Child(
+        family_id=child_family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+
+    guardian = Guardian(
+        family_id=guardian_family.id,
+        full_name="Maria Silva",
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(child_family)
+        FamilyRepository(session).add(guardian_family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        GuardianRepository(session).add(guardian)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyAddChildGuardianRepository(session)
+
+        result = add_child_guardian(
+            AddChildGuardianRequest(
+                child_id=child.id,
+                guardian_id=guardian.id,
+                relationship="Grandmother",
+                authorized_pickup=True,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        link = session.get(ChildGuardianModel, result.link_id)
+
+        assert link is not None
+        assert link.child_id == child.id
+        assert link.guardian_id == guardian.id
+        assert link.relationship == "Grandmother"
+        assert link.authorized_pickup is True
+
+        assert len(session.scalars(select(FamilyModel)).all()) == 2
+        assert len(session.scalars(select(ChildModel)).all()) == 1
+        assert len(session.scalars(select(GuardianModel)).all()) == 1
+        assert len(session.scalars(select(ChildGuardianModel)).all()) == 1
+
+    engine.dispose()
+
+
+def test_add_child_guardian_rejects_existing_database_link(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Maria Silva",
+    )
+    existing_link = ChildGuardian(
+        child_id=child.id,
+        guardian_id=guardian.id,
+        authorized_pickup=True,
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(existing_link)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyAddChildGuardianRepository(session)
+
+        with pytest.raises(DuplicateChildGuardianError):
+            add_child_guardian(
+                AddChildGuardianRequest(
+                    child_id=child.id,
+                    guardian_id=guardian.id,
+                    relationship="Mother",
+                    authorized_pickup=True,
+                ),
+                repository,
+            )
+
+    with Session(engine) as session:
+        links = session.scalars(select(ChildGuardianModel)).all()
+
+        assert len(links) == 1
+        assert links[0].id == existing_link.id
+        assert links[0].authorized_pickup is True
+
+    engine.dispose()

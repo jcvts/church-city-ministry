@@ -109,3 +109,13 @@ class LoginResponse(BaseModel):
 
 class UpdateMinistrySettingsBody(BaseModel):
     pager_required: StrictBool
+
+
+class AddChildGuardianBody(BaseModel):
+    guardian_id: UUID
+    relationship: str | None = None
+    authorized_pickup: bool = False
+
+
+class AddChildGuardianResponse(BaseModel):
+    link_id: UUID

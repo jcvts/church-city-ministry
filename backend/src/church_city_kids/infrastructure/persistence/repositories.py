@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from church_city_kids.application.add_child_guardian import AddChildGuardianRepository
 from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.create_room import CreateRoomRepository
@@ -227,6 +228,38 @@ class SqlAlchemyGetChildDetailsRepository(GetChildDetailsRepository):
             )
             for guardian, link in rows
         ]
+
+
+class SqlAlchemyAddChildGuardianRepository(AddChildGuardianRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_child(self, child_id: UUID) -> Child | None:
+        return ChildRepository(self._session).get(child_id)
+
+    def get_guardian(self, guardian_id: UUID) -> Guardian | None:
+        return GuardianRepository(self._session).get(guardian_id)
+
+    def get_child_guardians(self, child_id: UUID) -> list[ChildGuardian]:
+        statement = select(ChildGuardianModel).where(
+            ChildGuardianModel.child_id == child_id,
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            ChildGuardian(
+                id=model.id,
+                child_id=model.child_id,
+                guardian_id=model.guardian_id,
+                relationship=model.relationship,
+                authorized_pickup=model.authorized_pickup,
+            )
+            for model in models
+        ]
+
+    def add_child_guardian(self, link: ChildGuardian) -> None:
+        ChildGuardianRepository(self._session).add(link)
 
 
 class SqlAlchemyRegistrationRepository(RegistrationRepository):

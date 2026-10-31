@@ -2302,3 +2302,164 @@ def test_add_child_guardian_defaults_to_unauthorized_pickup(
     assert link is not None
     assert link.authorized_pickup is False
     assert link.relationship == "Grandmother"
+
+
+def test_add_new_guardian_to_existing_child_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Test Child",
+            birth_date=date(2021, 1, 1),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "full_name": "Ana Silva",
+            "phone": "82999999999",
+            "relationship": "Grandmother",
+        },
+    )
+
+    assert response.status_code == 201
+
+    link_id = UUID(response.json()["link_id"])
+
+    verification_session.expire_all()
+
+    link = verification_session.get(ChildGuardianModel, link_id)
+    assert link is not None
+
+    guardian = verification_session.get(
+        GuardianModel,
+        link.guardian_id,
+    )
+    assert guardian is not None
+    assert guardian.family_id == family_id
+    assert guardian.full_name == "Ana Silva"
+    assert guardian.phone == "82999999999"
+
+    assert link.child_id == child_id
+    assert link.relationship == "Grandmother"
+    assert link.authorized_pickup is False
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(FamilyModel)
+    ) == 1
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(ChildModel)
+    ) == 1
+
+
+def test_add_child_guardian_rejects_ambiguous_input(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Existing Guardian",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.post(
+        f"/api/children/{child_id}/guardians",
+        headers=headers,
+        json={
+            "guardian_id": str(guardian_id),
+            "full_name": "New Guardian",
+            "relationship": "Grandmother",
+        },
+    )
+
+    assert response.status_code == 422
+
+    verification_session.expire_all()
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(ChildGuardianModel)
+    ) == 0
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(GuardianModel)
+    ) == 1
+
+
+def test_add_child_guardian_rejects_missing_guardian_input(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        f"/api/children/{uuid4()}/guardians",
+        headers=headers,
+        json={
+            "relationship": "Grandmother",
+            "authorized_pickup": True,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(GuardianModel)
+    ) == 0
+
+    assert verification_session.scalar(
+        select(func.count()).select_from(ChildGuardianModel)
+    ) == 0

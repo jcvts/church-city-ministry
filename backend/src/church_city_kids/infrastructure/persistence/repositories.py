@@ -260,6 +260,9 @@ class SqlAlchemyAddChildGuardianRepository(AddChildGuardianRepository):
 
     def add_child_guardian(self, link: ChildGuardian) -> None:
         ChildGuardianRepository(self._session).add(link)
+    
+    def add_guardian(self, guardian: Guardian) -> None:
+        GuardianRepository(self._session).add(guardian)
 
 
 class SqlAlchemyRegistrationRepository(RegistrationRepository):

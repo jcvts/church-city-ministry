@@ -27,6 +27,7 @@ class FakeAddChildGuardianRepository:
         self.child = child
         self.guardian = guardian
         self.links: list[ChildGuardian] = []
+        self.guardians: list[Guardian] = []
 
     def get_child(self, child_id):
         return self.child if self.child.id == child_id else None
@@ -43,6 +44,9 @@ class FakeAddChildGuardianRepository:
 
     def add_child_guardian(self, link: ChildGuardian) -> None:
         self.links.append(link)
+    
+    def add_guardian(self, guardian: Guardian) -> None:
+        self.guardians.append(guardian)
 
 
 def test_add_existing_guardian_from_another_family() -> None:
@@ -177,3 +181,104 @@ def test_add_child_guardian_rejects_unknown_guardian() -> None:
         )
 
     assert repository.links == []
+
+
+def test_add_new_guardian_to_existing_child() -> None:
+    family = Family()
+
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+
+    existing_guardian = Guardian(
+        family_id=family.id,
+        full_name="Existing Guardian",
+    )
+
+    repository = FakeAddChildGuardianRepository(
+        child,
+        existing_guardian,
+    )
+
+    result = add_child_guardian(
+        AddChildGuardianRequest(
+            child_id=child.id,
+            full_name="Ana Silva",
+            phone="82999999999",
+            relationship="Grandmother",
+        ),
+        repository,
+    )
+
+    assert len(repository.guardians) == 1
+
+    new_guardian = repository.guardians[0]
+
+    assert new_guardian.family_id == child.family_id
+    assert new_guardian.full_name == "Ana Silva"
+    assert new_guardian.phone == "82999999999"
+    assert new_guardian.is_active is True
+
+    assert len(repository.links) == 1
+
+    link = repository.links[0]
+
+    assert link.child_id == child.id
+    assert link.guardian_id == new_guardian.id
+    assert link.relationship == "Grandmother"
+    assert link.authorized_pickup is False
+    assert result.link_id == link.id
+
+
+def test_add_child_guardian_rejects_ambiguous_input() -> None:
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Existing Guardian",
+    )
+    repository = FakeAddChildGuardianRepository(child, guardian)
+
+    with pytest.raises(ValueError, match="either guardian_id or full_name"):
+        add_child_guardian(
+            AddChildGuardianRequest(
+                child_id=child.id,
+                guardian_id=guardian.id,
+                full_name="New Guardian",
+            ),
+            repository,
+        )
+
+    assert repository.links == []
+    assert repository.guardians == []
+
+
+def test_add_child_guardian_rejects_missing_guardian_input() -> None:
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Existing Guardian",
+    )
+    repository = FakeAddChildGuardianRepository(child, guardian)
+
+    with pytest.raises(ValueError, match="either guardian_id or full_name"):
+        add_child_guardian(
+            AddChildGuardianRequest(
+                child_id=child.id,
+            ),
+            repository,
+        )
+
+    assert repository.links == []
+    assert repository.guardians == []

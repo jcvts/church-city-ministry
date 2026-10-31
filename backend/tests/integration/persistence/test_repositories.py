@@ -1481,3 +1481,65 @@ def test_add_child_guardian_rejects_existing_database_link(
         assert links[0].authorized_pickup is True
 
     engine.dispose()
+
+
+def test_add_new_guardian_to_existing_child_persists(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Test Child",
+        birth_date=date(2021, 1, 1),
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyAddChildGuardianRepository(session)
+
+        result = add_child_guardian(
+            AddChildGuardianRequest(
+                child_id=child.id,
+                full_name="Ana Silva",
+                phone="82999999999",
+                relationship="Grandmother",
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    with Session(engine) as session:
+        guardians = session.scalars(select(GuardianModel)).all()
+        links = session.scalars(select(ChildGuardianModel)).all()
+
+        assert len(guardians) == 1
+        guardian = guardians[0]
+
+        assert guardian.family_id == family.id
+        assert guardian.full_name == "Ana Silva"
+        assert guardian.phone == "82999999999"
+        assert guardian.is_active is True
+
+        assert len(links) == 1
+        link = links[0]
+
+        assert link.id == result.link_id
+        assert link.child_id == child.id
+        assert link.guardian_id == guardian.id
+        assert link.relationship == "Grandmother"
+        assert link.authorized_pickup is False
+
+        assert len(session.scalars(select(FamilyModel)).all()) == 1
+        assert len(session.scalars(select(ChildModel)).all()) == 1
+
+    engine.dispose()

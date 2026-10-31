@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, StrictBool
+from pydantic import BaseModel, StrictBool, model_validator
 
 
 class RegisterChildBody(BaseModel):
@@ -112,9 +112,28 @@ class UpdateMinistrySettingsBody(BaseModel):
 
 
 class AddChildGuardianBody(BaseModel):
-    guardian_id: UUID
+    guardian_id: UUID | None = None
+    full_name: str | None = None
+    phone: str | None = None
     relationship: str | None = None
     authorized_pickup: bool = False
+
+    @model_validator(mode="after")
+    def validate_guardian_input(self) -> "AddChildGuardianBody":
+        has_guardian_id = self.guardian_id is not None
+        has_full_name = bool(self.full_name and self.full_name.strip())
+
+        if has_guardian_id == has_full_name:
+            raise ValueError(
+                "Provide either guardian_id or full_name, but not both"
+            )
+
+        if has_guardian_id and self.phone is not None:
+            raise ValueError(
+                "Phone can only be provided for a new guardian"
+            )
+
+        return self
 
 
 class AddChildGuardianResponse(BaseModel):

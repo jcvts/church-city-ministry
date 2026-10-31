@@ -235,6 +235,8 @@ def add_child_guardian_endpoint(
             AddChildGuardianRequest(
                 child_id=child_id,
                 guardian_id=body.guardian_id,
+                full_name=body.full_name,
+                phone=body.phone,
                 relationship=body.relationship,
                 authorized_pickup=body.authorized_pickup,
             ),

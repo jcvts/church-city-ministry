@@ -16,8 +16,14 @@ from church_city_kids.application.get_child_details import GetChildDetailsReposi
 from church_city_kids.application.get_family_details import (
     GetFamilyDetailsRepository,
 )
+from church_city_kids.application.get_guardian_details import (
+    GetGuardianDetailsRepository,
+)
 from church_city_kids.application.list_children import ListChildrenRepository
 from church_city_kids.application.list_families import ListFamiliesRepository
+from church_city_kids.application.list_guardians import (
+    ListGuardiansRepository,
+)
 from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.list_service_attendances import (
     ServiceAttendanceItem,
@@ -273,6 +279,42 @@ class GuardianRepository:
         )
 
 
+class SqlAlchemyListGuardiansRepository(ListGuardiansRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def search_active_guardians(
+        self,
+        name: str,
+    ) -> list[Guardian]:
+        normalized_name = name.strip().lower()
+
+        statement = (
+            select(GuardianModel)
+            .where(
+                GuardianModel.is_active.is_(True),
+                func.lower(GuardianModel.full_name).contains(normalized_name),
+            )
+            .order_by(
+                GuardianModel.full_name,
+                GuardianModel.id,
+            )
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Guardian(
+                id=model.id,
+                family_id=model.family_id,
+                full_name=model.full_name,
+                phone=model.phone,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
+
+
 class ChildGuardianRepository:
     def __init__(self, session: DbSession) -> None:
         self._session = session
@@ -344,6 +386,50 @@ class SqlAlchemyGetChildDetailsRepository(GetChildDetailsRepository):
                 ),
             )
             for guardian, link in rows
+        ]
+
+
+class SqlAlchemyGetGuardianDetailsRepository(GetGuardianDetailsRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_guardian(self, guardian_id: UUID) -> Guardian | None:
+        return GuardianRepository(self._session).get(guardian_id)
+
+    def get_children_for_guardian(
+        self,
+        guardian_id: UUID,
+    ) -> list[tuple[Child, ChildGuardian]]:
+        statement = (
+            select(ChildModel, ChildGuardianModel)
+            .join(
+                ChildGuardianModel,
+                ChildGuardianModel.child_id == ChildModel.id,
+            )
+            .where(ChildGuardianModel.guardian_id == guardian_id)
+            .order_by(ChildModel.full_name, ChildModel.id)
+        )
+
+        rows = self._session.execute(statement).all()
+
+        return [
+            (
+                Child(
+                    id=child.id,
+                    family_id=child.family_id,
+                    full_name=child.full_name,
+                    birth_date=child.birth_date,
+                    is_active=child.is_active,
+                ),
+                ChildGuardian(
+                    id=link.id,
+                    child_id=link.child_id,
+                    guardian_id=link.guardian_id,
+                    relationship=link.relationship,
+                    authorized_pickup=link.authorized_pickup,
+                ),
+            )
+            for child, link in rows
         ]
 
 

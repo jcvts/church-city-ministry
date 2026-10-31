@@ -3372,3 +3372,285 @@ def test_get_family_details_returns_empty_members_for_empty_family(
         "children": [],
         "guardians": [],
     }
+
+
+def test_list_guardians_returns_matching_guardians(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Maria Oliveira",
+                phone="82999999999",
+                is_active=True,
+            ),
+            GuardianModel(
+                id=uuid4(),
+                family_id=family_id,
+                full_name="João Silva",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/guardians",
+        params={"name": "mArIa"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(guardian_id),
+            "family_id": str(family_id),
+            "full_name": "Maria Oliveira",
+            "phone": "82999999999",
+            "is_active": True,
+        }
+    ]
+
+
+def test_list_guardians_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(
+        "/api/guardians",
+        params={"name": "Maria"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_list_guardians_returns_empty_list_when_no_matches(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/guardians",
+        params={"name": "Nonexistent Guardian"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_guardians_requires_name_parameter(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/guardians",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_guardian_details_returns_children_across_families(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    guardian_family_id = uuid4()
+    other_family_id = uuid4()
+    guardian_id = uuid4()
+    first_child_id = uuid4()
+    second_child_id = uuid4()
+
+    verification_session.add_all(
+        [
+            FamilyModel(id=guardian_family_id, is_active=True),
+            FamilyModel(id=other_family_id, is_active=True),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            GuardianModel(
+                id=guardian_id,
+                family_id=guardian_family_id,
+                full_name="Maria Oliveira",
+                phone="82999999999",
+                is_active=True,
+            ),
+            ChildModel(
+                id=first_child_id,
+                family_id=guardian_family_id,
+                full_name="Ana Oliveira",
+                birth_date=date(2020, 5, 10),
+                is_active=True,
+            ),
+            ChildModel(
+                id=second_child_id,
+                family_id=other_family_id,
+                full_name="Pedro Silva",
+                birth_date=date(2021, 8, 15),
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildGuardianModel(
+                id=uuid4(),
+                child_id=first_child_id,
+                guardian_id=guardian_id,
+                relationship="Mother",
+                authorized_pickup=True,
+            ),
+            ChildGuardianModel(
+                id=uuid4(),
+                child_id=second_child_id,
+                guardian_id=guardian_id,
+                relationship="Aunt",
+                authorized_pickup=False,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/guardians/{guardian_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(guardian_id),
+        "family_id": str(guardian_family_id),
+        "full_name": "Maria Oliveira",
+        "phone": "82999999999",
+        "is_active": True,
+        "children": [
+            {
+                "id": str(first_child_id),
+                "family_id": str(guardian_family_id),
+                "full_name": "Ana Oliveira",
+                "birth_date": "2020-05-10",
+                "is_active": True,
+                "relationship": "Mother",
+                "authorized_pickup": True,
+            },
+            {
+                "id": str(second_child_id),
+                "family_id": str(other_family_id),
+                "full_name": "Pedro Silva",
+                "birth_date": "2021-08-15",
+                "is_active": True,
+                "relationship": "Aunt",
+                "authorized_pickup": False,
+            },
+        ],
+    }
+
+
+def test_get_guardian_details_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(f"/api/guardians/{uuid4()}")
+
+    assert response.status_code == 401
+
+
+def test_get_guardian_details_returns_404_for_unknown_guardian(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        f"/api/guardians/{uuid4()}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Guardian not found",
+    }
+
+
+def test_get_guardian_details_returns_empty_children_when_unlinked(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        GuardianModel(
+            id=guardian_id,
+            family_id=family_id,
+            full_name="João Oliveira",
+            phone="82999999999",
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/guardians/{guardian_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(guardian_id),
+        "family_id": str(family_id),
+        "full_name": "João Oliveira",
+        "phone": "82999999999",
+        "is_active": True,
+        "children": [],
+    }

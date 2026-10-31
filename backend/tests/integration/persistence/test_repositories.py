@@ -78,8 +78,10 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyGetChildDetailsRepository,
     SqlAlchemyGetFamilyDetailsRepository,
+    SqlAlchemyGetGuardianDetailsRepository,
     SqlAlchemyListChildrenRepository,
     SqlAlchemyListFamiliesRepository,
+    SqlAlchemyListGuardiansRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
     SqlAlchemyRemoveChildGuardianRepository,
@@ -2332,5 +2334,167 @@ def test_get_family_details_repository_loads_family_members(
         assert guardians[0].id == guardian_id
         assert guardians[0].full_name == "João Silva"
         assert guardians[0].phone == "82999999999"
+
+    engine.dispose()
+
+
+def test_search_active_guardians_matches_name_case_insensitively(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    maria_id = uuid4()
+    mariana_id = uuid4()
+
+    with Session(engine) as session:
+        session.add(FamilyModel(id=family_id, is_active=True))
+        session.flush()
+
+        session.add_all(
+            [
+                GuardianModel(
+                    id=maria_id,
+                    family_id=family_id,
+                    full_name="Maria Oliveira",
+                    phone="82999999999",
+                    is_active=True,
+                ),
+                GuardianModel(
+                    id=mariana_id,
+                    family_id=family_id,
+                    full_name="Mariana Silva",
+                    is_active=True,
+                ),
+                GuardianModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="Maria Souza",
+                    is_active=False,
+                ),
+                GuardianModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="João Santos",
+                    is_active=True,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyListGuardiansRepository(session)
+
+        results = repository.search_active_guardians("mArIa")
+
+        assert [guardian.id for guardian in results] == [
+            maria_id,
+            mariana_id,
+        ]
+        assert all(guardian.is_active for guardian in results)
+        assert results[0].phone == "82999999999"
+
+    engine.dispose()
+
+
+def test_get_guardian_details_repository_loads_children_across_families(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    guardian_family_id = uuid4()
+    other_family_id = uuid4()
+    guardian_id = uuid4()
+    first_child_id = uuid4()
+    second_child_id = uuid4()
+
+    with Session(engine) as session:
+        session.add_all(
+            [
+                FamilyModel(id=guardian_family_id, is_active=True),
+                FamilyModel(id=other_family_id, is_active=True),
+            ]
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                GuardianModel(
+                    id=guardian_id,
+                    family_id=guardian_family_id,
+                    full_name="Maria Oliveira",
+                    phone="82999999999",
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=first_child_id,
+                    family_id=guardian_family_id,
+                    full_name="Ana Oliveira",
+                    birth_date=date(2020, 5, 10),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=second_child_id,
+                    family_id=other_family_id,
+                    full_name="Pedro Silva",
+                    birth_date=date(2021, 8, 15),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=uuid4(),
+                    family_id=other_family_id,
+                    full_name="Unlinked Child",
+                    birth_date=date(2022, 1, 1),
+                    is_active=True,
+                ),
+            ]
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                ChildGuardianModel(
+                    id=uuid4(),
+                    child_id=first_child_id,
+                    guardian_id=guardian_id,
+                    relationship="Mother",
+                    authorized_pickup=True,
+                ),
+                ChildGuardianModel(
+                    id=uuid4(),
+                    child_id=second_child_id,
+                    guardian_id=guardian_id,
+                    relationship="Aunt",
+                    authorized_pickup=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyGetGuardianDetailsRepository(session)
+
+        guardian = repository.get_guardian(guardian_id)
+        children = repository.get_children_for_guardian(guardian_id)
+
+        assert guardian is not None
+        assert guardian.id == guardian_id
+        assert guardian.family_id == guardian_family_id
+
+        assert len(children) == 2
+
+        first_child, first_link = children[0]
+        assert first_child.id == first_child_id
+        assert first_child.family_id == guardian_family_id
+        assert first_link.relationship == "Mother"
+        assert first_link.authorized_pickup is True
+
+        second_child, second_link = children[1]
+        assert second_child.id == second_child_id
+        assert second_child.family_id == other_family_id
+        assert second_link.relationship == "Aunt"
+        assert second_link.authorized_pickup is False
 
     engine.dispose()

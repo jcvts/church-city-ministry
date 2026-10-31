@@ -75,8 +75,12 @@ from church_city_kids.application.get_child_details import get_child_details
 from church_city_kids.application.get_family_details import (
     get_family_details,
 )
+from church_city_kids.application.get_guardian_details import (
+    get_guardian_details,
+)
 from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_families import list_families
+from church_city_kids.application.list_guardians import list_guardians
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.list_service_attendances import (
     list_service_attendances,
@@ -124,8 +128,10 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateSessionRepository,
     SqlAlchemyGetChildDetailsRepository,
     SqlAlchemyGetFamilyDetailsRepository,
+    SqlAlchemyGetGuardianDetailsRepository,
     SqlAlchemyListChildrenRepository,
     SqlAlchemyListFamiliesRepository,
+    SqlAlchemyListGuardiansRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
@@ -344,6 +350,71 @@ def get_family_details_endpoint(
                 "is_active": guardian.is_active,
             }
             for guardian in family.guardians
+        ],
+    }
+
+
+@app.get("/api/guardians")
+def list_guardians_endpoint(
+    name: str,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[dict[str, object]]:
+    repository = SqlAlchemyListGuardiansRepository(session)
+
+    guardians = list_guardians(
+        repository,
+        name=name,
+    )
+
+    return [
+        {
+            "id": str(guardian.id),
+            "family_id": str(guardian.family_id),
+            "full_name": guardian.full_name,
+            "phone": guardian.phone,
+            "is_active": guardian.is_active,
+        }
+        for guardian in guardians
+    ]
+
+
+@app.get("/api/guardians/{guardian_id}")
+def get_guardian_details_endpoint(
+    guardian_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> dict[str, object]:
+    repository = SqlAlchemyGetGuardianDetailsRepository(session)
+
+    guardian = get_guardian_details(
+        repository,
+        guardian_id=guardian_id,
+    )
+
+    if guardian is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Guardian not found",
+        )
+
+    return {
+        "id": str(guardian.id),
+        "family_id": str(guardian.family_id),
+        "full_name": guardian.full_name,
+        "phone": guardian.phone,
+        "is_active": guardian.is_active,
+        "children": [
+            {
+                "id": str(child.id),
+                "family_id": str(child.family_id),
+                "full_name": child.full_name,
+                "birth_date": child.birth_date.isoformat(),
+                "is_active": child.is_active,
+                "relationship": child.relationship,
+                "authorized_pickup": child.authorized_pickup,
+            }
+            for child in guardian.children
         ],
     }
 

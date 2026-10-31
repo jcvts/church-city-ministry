@@ -335,9 +335,37 @@ def test_pickup_rejects_link_belonging_to_another_guardian() -> None:
         )
 
 
-def test_pickup_rejects_guardian_from_another_family() -> None:
+def test_pickup_rejects_unauthorized_guardian_from_another_family() -> None:
     from church_city_kids.domain.attendance import authorize_guardian_pickup
     from church_city_kids.domain.errors import GuardianNotAuthorizedForPickupError
+    from church_city_kids.domain.people import ChildGuardian, Guardian
+
+    family = make_family()
+    another_family = make_family()
+
+    child = make_child(family, birth_date=date(2021, 1, 1))
+
+    guardian = Guardian(
+        family_id=another_family.id,
+        full_name="Maria Silva",
+    )
+
+    link = ChildGuardian(
+        child_id=child.id,
+        guardian_id=guardian.id,
+        authorized_pickup=False,
+    )
+
+    with pytest.raises(GuardianNotAuthorizedForPickupError):
+        authorize_guardian_pickup(
+            child=child,
+            guardian=guardian,
+            link=link,
+        )
+
+
+def test_pickup_allows_authorized_guardian_from_another_family() -> None:
+    from church_city_kids.domain.attendance import authorize_guardian_pickup
     from church_city_kids.domain.people import ChildGuardian, Guardian
 
     family = make_family()
@@ -356,9 +384,8 @@ def test_pickup_rejects_guardian_from_another_family() -> None:
         authorized_pickup=True,
     )
 
-    with pytest.raises(GuardianNotAuthorizedForPickupError):
-        authorize_guardian_pickup(
-            child=child,
-            guardian=guardian,
-            link=link,
-        )
+    authorize_guardian_pickup(
+        child=child,
+        guardian=guardian,
+        link=link,
+    )

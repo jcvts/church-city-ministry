@@ -29,7 +29,10 @@ from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
 )
-from church_city_kids.domain.errors import ChildAlreadyCheckedInError
+from church_city_kids.domain.errors import (
+    ChildAlreadyCheckedInError,
+    GuardianNotAuthorizedForPickupError,
+)
 from church_city_kids.domain.people import (
     Child,
     ChildGuardian,
@@ -1086,3 +1089,271 @@ def test_get_child_details_returns_only_linked_guardians(
         assert guardian.is_active is True
 
     engine.dispose()
+
+
+def test_check_out_child_allows_authorized_guardian_from_another_family(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    another_family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    checked_in_at = datetime(2026, 10, 4, 18, 30)
+    checked_out_at = datetime(2026, 10, 4, 20, 0)
+
+    with Session(engine) as session:
+        session.add(
+            FamilyModel(
+                id=family_id,
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            FamilyModel(
+                id=another_family_id,
+                is_active=True,
+            )
+        )
+
+        session.add(
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            )
+        )
+
+        session.add(
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 10, 4, 19, 0),
+                ends_at=None,
+            )
+        )
+
+        session.add(
+            RoomModel(
+                id=room_id,
+                name="Kids Room",
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            SessionModel(
+                id=session_id,
+                service_id=service_id,
+                room_id=room_id,
+                name="Kids 3-5",
+                min_age_years=3,
+                max_age_years=5,
+                status="OPEN",
+            )
+        )
+        session.flush()
+
+        session.add(
+            AttendanceModel(
+                id=attendance_id,
+                child_id=child_id,
+                session_id=session_id,
+                checked_in_at=checked_in_at,
+                checked_out_at=None,
+            )
+        )
+
+        session.commit()
+
+    guardian = Guardian(
+        family_id=another_family_id,
+        full_name="Maria Silva",
+    )
+    link = ChildGuardian(
+        child_id=child_id,
+        guardian_id=guardian.id,
+        authorized_pickup=True,
+    )
+
+    with Session(engine) as session:
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+
+        result = check_out_child(
+            CheckOutRequest(
+                attendance_id=attendance_id,
+                occurred_at=checked_out_at,
+                guardian_id=guardian.id,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    assert result.attendance_id == attendance_id
+
+    with Session(engine) as session:
+        attendance = session.get(AttendanceModel, attendance_id)
+
+        assert attendance is not None
+        assert attendance.checked_in_at == checked_in_at
+        assert attendance.checked_out_at == checked_out_at
+        assert attendance.checked_out_by_guardian_id == guardian.id
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+        loaded_attendance = repository.get_attendance(attendance_id)
+
+        assert loaded_attendance is not None
+        assert loaded_attendance.checked_out_at == checked_out_at
+        assert loaded_attendance.checked_out_by_guardian_id == guardian.id
+
+
+def test_check_out_child_rejects_unauthorized_guardian_from_another_family(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    another_family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    checked_in_at = datetime(2026, 10, 4, 18, 30)
+    checked_out_at = datetime(2026, 10, 4, 20, 0)
+
+    with Session(engine) as session:
+        session.add(
+            FamilyModel(
+                id=family_id,
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            FamilyModel(
+                id=another_family_id,
+                is_active=True,
+            )
+        )
+
+        session.add(
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Test Child",
+                birth_date=date(2021, 1, 1),
+                is_active=True,
+            )
+        )
+
+        session.add(
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 10, 4, 19, 0),
+                ends_at=None,
+            )
+        )
+
+        session.add(
+            RoomModel(
+                id=room_id,
+                name="Kids Room",
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add(
+            SessionModel(
+                id=session_id,
+                service_id=service_id,
+                room_id=room_id,
+                name="Kids 3-5",
+                min_age_years=3,
+                max_age_years=5,
+                status="OPEN",
+            )
+        )
+        session.flush()
+
+        session.add(
+            AttendanceModel(
+                id=attendance_id,
+                child_id=child_id,
+                session_id=session_id,
+                checked_in_at=checked_in_at,
+                checked_out_at=None,
+            )
+        )
+
+        session.commit()
+
+    guardian = Guardian(
+        family_id=another_family_id,
+        full_name="Maria Silva",
+    )
+    link = ChildGuardian(
+        child_id=child_id,
+        guardian_id=guardian.id,
+        authorized_pickup=False,
+    )
+
+    with Session(engine) as session:
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+
+        with pytest.raises(GuardianNotAuthorizedForPickupError):
+            check_out_child(
+                CheckOutRequest(
+                    attendance_id=attendance_id,
+                    occurred_at=checked_out_at,
+                    guardian_id=guardian.id,
+                ),
+                repository,
+            )
+
+    with Session(engine) as session:
+        attendance = session.get(AttendanceModel, attendance_id)
+
+        assert attendance is not None
+        assert attendance.checked_out_at is None
+        assert attendance.checked_out_by_guardian_id is None
+
+    with Session(engine) as session:
+        repository = SqlAlchemyCheckOutRepository(session)
+        loaded_attendance = repository.get_attendance(attendance_id)
+
+        assert loaded_attendance is not None
+        assert loaded_attendance.checked_out_at is None
+        assert loaded_attendance.checked_out_by_guardian_id is None

@@ -82,7 +82,6 @@ def authorize_guardian_pickup(
 ) -> None:
     if (
         not guardian.is_active
-        or guardian.family_id != child.family_id
         or link.child_id != child.id
         or link.guardian_id != guardian.id
         or not link.authorized_pickup

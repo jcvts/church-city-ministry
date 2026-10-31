@@ -13,7 +13,11 @@ from church_city_kids.application.get_child_attendance_history import (
     ChildAttendanceHistoryItem,
 )
 from church_city_kids.application.get_child_details import GetChildDetailsRepository
+from church_city_kids.application.get_family_details import (
+    GetFamilyDetailsRepository,
+)
 from church_city_kids.application.list_children import ListChildrenRepository
+from church_city_kids.application.list_families import ListFamiliesRepository
 from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.list_service_attendances import (
     ServiceAttendanceItem,
@@ -129,6 +133,113 @@ class FamilyRepository:
             is_active=model.is_active,
         )
 
+
+class SqlAlchemyGetFamilyDetailsRepository(GetFamilyDetailsRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_family(self, family_id: UUID) -> Family | None:
+        model = self._session.get(FamilyModel, family_id)
+
+        if model is None:
+            return None
+
+        return Family(
+            id=model.id,
+            is_active=model.is_active,
+        )
+
+    def get_children_for_family(
+        self,
+        family_id: UUID,
+    ) -> list[Child]:
+        statement = (
+            select(ChildModel)
+            .where(ChildModel.family_id == family_id)
+            .order_by(ChildModel.full_name, ChildModel.id)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Child(
+                id=model.id,
+                family_id=model.family_id,
+                full_name=model.full_name,
+                birth_date=model.birth_date,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
+
+    def get_guardians_for_family(
+        self,
+        family_id: UUID,
+    ) -> list[Guardian]:
+        statement = (
+            select(GuardianModel)
+            .where(GuardianModel.family_id == family_id)
+            .order_by(GuardianModel.full_name, GuardianModel.id)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Guardian(
+                id=model.id,
+                family_id=model.family_id,
+                full_name=model.full_name,
+                phone=model.phone,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
+
+
+class SqlAlchemyListFamiliesRepository(ListFamiliesRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def search_active_families(self, name: str) -> list[Family]:
+        normalized_name = name.strip().lower()
+
+        matching_children = (
+            select(ChildModel.family_id)
+            .where(
+                ChildModel.is_active.is_(True),
+                func.lower(ChildModel.full_name).contains(normalized_name),
+            )
+        )
+
+        matching_guardians = (
+            select(GuardianModel.family_id)
+            .where(
+                GuardianModel.is_active.is_(True),
+                func.lower(GuardianModel.full_name).contains(normalized_name),
+            )
+        )
+
+        statement = (
+            select(FamilyModel)
+            .where(
+                FamilyModel.is_active.is_(True),
+                (
+                    FamilyModel.id.in_(matching_children)
+                    | FamilyModel.id.in_(matching_guardians)
+                ),
+            )
+            .order_by(FamilyModel.id)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Family(
+                id=model.id,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
 
 
 

@@ -3124,3 +3124,251 @@ def test_list_service_attendances_returns_404_when_service_does_not_exist(
     assert response.json() == {
         "detail": "Service not found",
     }
+
+
+def test_list_families_returns_family_matching_child_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/families",
+        params={"name": "mArIa"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(family_id),
+            "is_active": True,
+        }
+    ]
+
+
+def test_list_families_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(
+        "/api/families",
+        params={"name": "maria"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_list_families_returns_family_matching_guardian_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        GuardianModel(
+            id=guardian_id,
+            family_id=family_id,
+            full_name="João Oliveira",
+            phone="82999999999",
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/families",
+        params={"name": "oLiVeIrA"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(family_id),
+            "is_active": True,
+        }
+    ]
+
+
+def test_list_families_returns_empty_list_when_no_matches(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/families",
+        params={"name": "inexistente"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_family_details_returns_children_and_guardians(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=date(2021, 5, 10),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="João Silva",
+                phone="82999999999",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/families/{family_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(family_id),
+        "is_active": True,
+        "children": [
+            {
+                "id": str(child_id),
+                "full_name": "Maria Silva",
+                "birth_date": "2021-05-10",
+                "is_active": True,
+            }
+        ],
+        "guardians": [
+            {
+                "id": str(guardian_id),
+                "full_name": "João Silva",
+                "phone": "82999999999",
+                "is_active": True,
+            }
+        ],
+    }
+
+
+def test_get_family_details_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(f"/api/families/{uuid4()}")
+
+    assert response.status_code == 401
+
+
+def test_get_family_details_returns_404_for_unknown_family(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        f"/api/families/{uuid4()}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Family not found"}
+
+
+def test_get_family_details_returns_empty_members_for_empty_family(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/families/{family_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(family_id),
+        "is_active": True,
+        "children": [],
+        "guardians": [],
+    }

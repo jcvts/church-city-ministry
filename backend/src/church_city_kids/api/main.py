@@ -72,7 +72,11 @@ from church_city_kids.application.get_child_attendance_history import (
     get_child_attendance_history,
 )
 from church_city_kids.application.get_child_details import get_child_details
+from church_city_kids.application.get_family_details import (
+    get_family_details,
+)
 from church_city_kids.application.list_children import list_children
+from church_city_kids.application.list_families import list_families
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.list_service_attendances import (
     list_service_attendances,
@@ -119,7 +123,9 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
     SqlAlchemyGetChildDetailsRepository,
+    SqlAlchemyGetFamilyDetailsRepository,
     SqlAlchemyListChildrenRepository,
+    SqlAlchemyListFamiliesRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
@@ -275,6 +281,71 @@ def get_child_attendance_history_endpoint(
         }
         for item in history
     ]
+
+
+@app.get("/api/families")
+def list_families_endpoint(
+    name: str,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[dict[str, str | bool]]:
+    repository = SqlAlchemyListFamiliesRepository(session)
+
+    families = list_families(
+        repository,
+        name=name,
+    )
+
+    return [
+        {
+            "id": str(family.id),
+            "is_active": family.is_active,
+        }
+        for family in families
+    ]
+
+
+@app.get("/api/families/{family_id}")
+def get_family_details_endpoint(
+    family_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> dict[str, object]:
+    repository = SqlAlchemyGetFamilyDetailsRepository(session)
+
+    family = get_family_details(
+        repository,
+        family_id=family_id,
+    )
+
+    if family is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Family not found",
+        )
+
+    return {
+        "id": str(family.id),
+        "is_active": family.is_active,
+        "children": [
+            {
+                "id": str(child.id),
+                "full_name": child.full_name,
+                "birth_date": child.birth_date.isoformat(),
+                "is_active": child.is_active,
+            }
+            for child in family.children
+        ],
+        "guardians": [
+            {
+                "id": str(guardian.id),
+                "full_name": guardian.full_name,
+                "phone": guardian.phone,
+                "is_active": guardian.is_active,
+            }
+            for guardian in family.guardians
+        ],
+    }
 
 
 @app.post(

@@ -1886,3 +1886,113 @@ def test_create_session_rejects_volunteer(api_client):
     )
 
     assert response.status_code == 403
+
+
+def test_get_child_details_returns_child_and_guardians(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=date(2021, 5, 10),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Ana Silva",
+                phone="82999999999",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildGuardianModel(
+            id=uuid4(),
+            child_id=child_id,
+            guardian_id=guardian_id,
+            relationship="Mother",
+            authorized_pickup=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/children/{child_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(child_id),
+        "family_id": str(family_id),
+        "full_name": "Maria Silva",
+        "birth_date": "2021-05-10",
+        "guardians": [
+            {
+                "id": str(guardian_id),
+                "full_name": "Ana Silva",
+                "phone": "82999999999",
+                "relationship": "Mother",
+                "authorized_pickup": True,
+                "is_active": True,
+            }
+        ],
+    }
+
+
+def test_get_child_details_returns_404_when_child_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    child_id = uuid4()
+
+    response = client.get(
+        f"/api/children/{child_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child not found",
+    }
+
+
+def test_get_child_details_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    child_id = uuid4()
+
+    response = client.get(
+        f"/api/children/{child_id}",
+    )
+
+    assert response.status_code == 401

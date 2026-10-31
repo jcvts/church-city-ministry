@@ -8,6 +8,7 @@ from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.create_room import CreateRoomRepository
 from church_city_kids.application.create_service import CreateServiceRepository
+from church_city_kids.application.get_child_details import GetChildDetailsRepository
 from church_city_kids.application.list_children import ListChildrenRepository
 from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.registration import RegistrationRepository
@@ -182,6 +183,50 @@ class ChildGuardianRepository:
             relationship=model.relationship,
             authorized_pickup=model.authorized_pickup,
         )
+
+
+class SqlAlchemyGetChildDetailsRepository(GetChildDetailsRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_child(self, child_id: UUID) -> Child | None:
+        return ChildRepository(self._session).get(child_id)
+
+    def get_guardians_for_child(
+        self,
+        child_id: UUID,
+    ) -> list[tuple[Guardian, ChildGuardian]]:
+        statement = (
+            select(GuardianModel, ChildGuardianModel)
+            .join(
+                ChildGuardianModel,
+                ChildGuardianModel.guardian_id == GuardianModel.id,
+            )
+            .where(ChildGuardianModel.child_id == child_id)
+            .order_by(GuardianModel.full_name, GuardianModel.id)
+        )
+
+        rows = self._session.execute(statement).all()
+
+        return [
+            (
+                Guardian(
+                    id=guardian.id,
+                    family_id=guardian.family_id,
+                    full_name=guardian.full_name,
+                    phone=guardian.phone,
+                    is_active=guardian.is_active,
+                ),
+                ChildGuardian(
+                    id=link.id,
+                    child_id=link.child_id,
+                    guardian_id=link.guardian_id,
+                    relationship=link.relationship,
+                    authorized_pickup=link.authorized_pickup,
+                ),
+            )
+            for guardian, link in rows
+        ]
 
 
 class SqlAlchemyRegistrationRepository(RegistrationRepository):

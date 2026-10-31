@@ -25,6 +25,23 @@ class ChildResponse(BaseModel):
     birth_date: date
 
 
+class GuardianDetailResponse(BaseModel):
+    id: UUID
+    full_name: str
+    phone: str | None
+    relationship: str | None
+    authorized_pickup: bool
+    is_active: bool
+
+
+class ChildDetailsResponse(BaseModel):
+    id: UUID
+    family_id: UUID
+    full_name: str
+    birth_date: date
+    guardians: list[GuardianDetailResponse]
+
+
 class CreateServiceBody(BaseModel):
     name: str
     starts_at: datetime

@@ -22,6 +22,7 @@ from church_city_kids.application.create_service import (
     CreateServiceRequest,
     create_service,
 )
+from church_city_kids.application.get_child_details import get_child_details
 from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.registration import (
@@ -40,8 +41,10 @@ from church_city_kids.infrastructure.persistence.base import Base
 from church_city_kids.infrastructure.persistence.database import create_sqlite_engine
 from church_city_kids.infrastructure.persistence.models import (
     AttendanceModel,
+    ChildGuardianModel,
     ChildModel,
     FamilyModel,
+    GuardianModel,
     RoomModel,
     ServiceModel,
     SessionModel,
@@ -55,6 +58,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCheckOutRepository,
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
+    SqlAlchemyGetChildDetailsRepository,
     SqlAlchemyListChildrenRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
@@ -990,5 +994,95 @@ def test_list_children_searches_active_children_by_partial_name(
         "Mariana Costa",
     ]
     assert all(child.family_id == family_id for child in result)
+
+    engine.dispose()
+
+
+def test_get_child_details_returns_only_linked_guardians(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+    child_id = uuid4()
+    other_child_id = uuid4()
+    guardian_id = uuid4()
+    other_guardian_id = uuid4()
+
+    with Session(engine) as session:
+        session.add(FamilyModel(id=family_id, is_active=True))
+        session.flush()
+
+        session.add_all(
+            [
+                ChildModel(
+                    id=child_id,
+                    family_id=family_id,
+                    full_name="Maria Silva",
+                    birth_date=date(2021, 5, 10),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=other_child_id,
+                    family_id=family_id,
+                    full_name="João Silva",
+                    birth_date=date(2020, 3, 15),
+                    is_active=True,
+                ),
+                GuardianModel(
+                    id=guardian_id,
+                    family_id=family_id,
+                    full_name="Ana Silva",
+                    phone="82999999999",
+                    is_active=True,
+                ),
+                GuardianModel(
+                    id=other_guardian_id,
+                    family_id=family_id,
+                    full_name="Carlos Silva",
+                    phone=None,
+                    is_active=False,
+                ),
+            ]
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                ChildGuardianModel(
+                    id=uuid4(),
+                    child_id=child_id,
+                    guardian_id=guardian_id,
+                    relationship="Mother",
+                    authorized_pickup=True,
+                ),
+                ChildGuardianModel(
+                    id=uuid4(),
+                    child_id=other_child_id,
+                    guardian_id=other_guardian_id,
+                    relationship="Father",
+                    authorized_pickup=False,
+                ),
+            ]
+        )
+        session.commit()
+
+        repository = SqlAlchemyGetChildDetailsRepository(session)
+        result = get_child_details(repository, child_id=child_id)
+
+        assert result is not None
+        assert result.id == child_id
+        assert result.full_name == "Maria Silva"
+        assert len(result.guardians) == 1
+
+        guardian = result.guardians[0]
+
+        assert guardian.id == guardian_id
+        assert guardian.full_name == "Ana Silva"
+        assert guardian.phone == "82999999999"
+        assert guardian.relationship == "Mother"
+        assert guardian.authorized_pickup is True
+        assert guardian.is_active is True
 
     engine.dispose()

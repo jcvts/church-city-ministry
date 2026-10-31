@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from church_city_kids.api.schemas import (
     CheckInResponse,
     CheckOutBody,
     CheckOutResponse,
+    ChildDetailsResponse,
     ChildResponse,
     CreateRoomBody,
     CreateRoomResponse,
@@ -21,6 +23,7 @@ from church_city_kids.api.schemas import (
     CreateServiceResponse,
     CreateSessionBody,
     CreateSessionResponse,
+    GuardianDetailResponse,
     LoginBody,
     LoginResponse,
     RegisterChildBody,
@@ -54,6 +57,7 @@ from church_city_kids.application.create_session import (
     ServiceNotFoundError,
     create_session,
 )
+from church_city_kids.application.get_child_details import get_child_details
 from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.registration import (
@@ -81,6 +85,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
+    SqlAlchemyGetChildDetailsRepository,
     SqlAlchemyListChildrenRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
@@ -160,6 +165,44 @@ def list_children_endpoint(
         )
         for child in result
     ]
+
+
+@app.get(
+    "/api/children/{child_id}",
+    response_model=ChildDetailsResponse,
+)
+def get_child_details_endpoint(
+    child_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> ChildDetailsResponse:
+    repository = SqlAlchemyGetChildDetailsRepository(session)
+
+    result = get_child_details(repository, child_id=child_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found",
+        )
+
+    return ChildDetailsResponse(
+        id=result.id,
+        family_id=result.family_id,
+        full_name=result.full_name,
+        birth_date=result.birth_date,
+        guardians=[
+            GuardianDetailResponse(
+                id=guardian.id,
+                full_name=guardian.full_name,
+                phone=guardian.phone,
+                relationship=guardian.relationship,
+                authorized_pickup=guardian.authorized_pickup,
+                is_active=guardian.is_active,
+            )
+            for guardian in result.guardians
+        ],
+    )
 
 
 @app.post(

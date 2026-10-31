@@ -2968,3 +2968,159 @@ def test_get_child_attendance_history_returns_attendance_details(
             "checked_out_by_guardian_name": "Ana Silva",
         }
     ]
+
+
+def test_list_service_attendances_returns_present_children(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    checked_in_at = datetime(2026, 10, 25, 9, 10)
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=date(2021, 5, 10),
+                is_active=True,
+            ),
+            ServiceModel(
+                id=service_id,
+                name="Sunday Morning",
+                starts_at=datetime(2026, 10, 25, 9, 0),
+                ends_at=None,
+            ),
+            RoomModel(
+                id=room_id,
+                name="Kids 4-6",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        SessionModel(
+            id=session_id,
+            service_id=service_id,
+            room_id=room_id,
+            name="Kids 4-6 Morning",
+            min_age_years=4,
+            max_age_years=6,
+            status="OPEN",
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        AttendanceModel(
+            id=attendance_id,
+            child_id=child_id,
+            session_id=session_id,
+            checked_in_at=checked_in_at,
+            checked_out_at=None,
+            checked_out_by_guardian_id=None,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/services/{service_id}/attendances",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "attendance_id": str(attendance_id),
+            "service_id": str(service_id),
+            "child_id": str(child_id),
+            "child_name": "Maria Silva",
+            "room_id": str(room_id),
+            "room_name": "Kids 4-6",
+            "checked_in_at": checked_in_at.isoformat(),
+            "checked_out_at": None,
+        }
+    ]
+
+
+def test_list_service_attendances_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(
+        f"/api/services/{uuid4()}/attendances",
+    )
+
+    assert response.status_code == 401
+
+
+def test_list_service_attendances_returns_empty_list_for_service_without_attendances(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    service_id = uuid4()
+
+    verification_session.add(
+        ServiceModel(
+            id=service_id,
+            name="Sunday Morning",
+            starts_at=datetime(2026, 10, 25, 9, 0),
+            ends_at=None,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/services/{service_id}/attendances",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_service_attendances_returns_404_when_service_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    nonexistent_service_id = uuid4()
+
+    response = client.get(
+        f"/api/services/{nonexistent_service_id}/attendances",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Service not found",
+    }

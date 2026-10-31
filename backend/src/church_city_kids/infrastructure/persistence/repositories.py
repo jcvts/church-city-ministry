@@ -15,6 +15,9 @@ from church_city_kids.application.get_child_attendance_history import (
 from church_city_kids.application.get_child_details import GetChildDetailsRepository
 from church_city_kids.application.list_children import ListChildrenRepository
 from church_city_kids.application.list_rooms import ListRoomsRepository
+from church_city_kids.application.list_service_attendances import (
+    ServiceAttendanceItem,
+)
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
@@ -766,4 +769,60 @@ class SqlAlchemyChildAttendanceHistoryRepository:
                 room_name,
                 guardian_name,
             ) in rows
+        ]
+
+
+class SqlAlchemyServiceAttendanceRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def list_active_by_service(
+        self,
+        service_id: UUID,
+    ) -> list[ServiceAttendanceItem]:
+        statement = (
+            select(
+                AttendanceModel,
+                ChildModel.full_name,
+                RoomModel.id,
+                RoomModel.name,
+            )
+            .join(
+                SessionModel,
+                AttendanceModel.session_id == SessionModel.id,
+            )
+            .join(
+                ChildModel,
+                AttendanceModel.child_id == ChildModel.id,
+            )
+            .join(
+                RoomModel,
+                SessionModel.room_id == RoomModel.id,
+            )
+            .where(
+                SessionModel.service_id == service_id,
+                AttendanceModel.checked_out_at.is_(None),
+            )
+            .order_by(
+                RoomModel.name,
+                ChildModel.full_name,
+                AttendanceModel.checked_in_at,
+                AttendanceModel.id,
+            )
+        )
+
+        rows = self._session.execute(statement).all()
+
+        return [
+            ServiceAttendanceItem(
+                attendance_id=attendance.id,
+                service_id=service_id,
+                child_id=attendance.child_id,
+                child_name=child_name,
+                room_id=room_id,
+                room_name=room_name,
+                checked_in_at=attendance.checked_in_at,
+                checked_out_at=attendance.checked_out_at,
+            )
+            for attendance, child_name, room_id, room_name in rows
         ]

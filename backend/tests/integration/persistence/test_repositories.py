@@ -81,6 +81,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
     SqlAlchemyRemoveChildGuardianRepository,
+    SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
 )
 
@@ -1989,5 +1990,193 @@ def test_child_attendance_history_includes_open_attendance(
 
         assert result[1].child_id == child_id
         assert result[1].checked_out_at == datetime(2026, 10, 18, 11, 0)
+
+    engine.dispose()
+
+
+def test_list_service_attendances_returns_only_active_attendances(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+
+    present_child_id = uuid4()
+    checked_out_child_id = uuid4()
+    other_service_child_id = uuid4()
+    nursery_child_id = uuid4()
+    nursery_attendance_id = uuid4()
+
+    service_id = uuid4()
+    other_service_id = uuid4()
+
+    room_id = uuid4()
+    other_room_id = uuid4()
+    other_room_session_id = uuid4()
+    session_id = uuid4()
+    other_session_id = uuid4()
+
+    present_attendance_id = uuid4()
+    checked_in_at = datetime(2026, 10, 25, 9, 10)
+
+    with Session(engine) as session:
+        session.add(
+            FamilyModel(
+                id=family_id,
+                is_active=True,
+            )
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                ChildModel(
+                    id=present_child_id,
+                    family_id=family_id,
+                    full_name="Maria Silva",
+                    birth_date=date(2021, 5, 10),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=checked_out_child_id,
+                    family_id=family_id,
+                    full_name="Pedro Silva",
+                    birth_date=date(2020, 3, 15),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=other_service_child_id,
+                    family_id=family_id,
+                    full_name="Ana Silva",
+                    birth_date=date(2021, 8, 20),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=nursery_child_id,
+                    family_id=family_id,
+                    full_name="Beatriz Silva",
+                    birth_date=date(2024, 3, 15),
+                    is_active=True,
+                ),
+                ServiceModel(
+                    id=service_id,
+                    name="Sunday Morning",
+                    starts_at=datetime(2026, 10, 25, 9, 0),
+                    ends_at=None,
+                ),
+                ServiceModel(
+                    id=other_service_id,
+                    name="Sunday Evening",
+                    starts_at=datetime(2026, 10, 25, 18, 0),
+                    ends_at=None,
+                ),
+                RoomModel(
+                    id=room_id,
+                    name="Kids 4-6",
+                    is_active=True,
+                ),
+                RoomModel(
+                    id=other_room_id,
+                    name="Nursery",
+                    is_active=True,
+                ),
+            ]
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                SessionModel(
+                    id=session_id,
+                    service_id=service_id,
+                    room_id=room_id,
+                    name="Kids 4-6 Morning",
+                    min_age_years=4,
+                    max_age_years=6,
+                    status="OPEN",
+                ),
+                SessionModel(
+                    id=other_session_id,
+                    service_id=other_service_id,
+                    room_id=room_id,
+                    name="Kids 4-6 Evening",
+                    min_age_years=4,
+                    max_age_years=6,
+                    status="OPEN",
+                ),
+                SessionModel(
+                    id=other_room_session_id,
+                    service_id=service_id,
+                    room_id=other_room_id,
+                    name="Nursery Morning",
+                    min_age_years=0,
+                    max_age_years=3,
+                    status="OPEN",
+                ),
+            ]
+        )
+        session.flush()
+
+        session.add_all(
+            [
+                AttendanceModel(
+                    id=present_attendance_id,
+                    child_id=present_child_id,
+                    session_id=session_id,
+                    checked_in_at=checked_in_at,
+                    checked_out_at=None,
+                    checked_out_by_guardian_id=None,
+                ),
+                AttendanceModel(
+                    id=uuid4(),
+                    child_id=checked_out_child_id,
+                    session_id=session_id,
+                    checked_in_at=datetime(2026, 10, 25, 9, 5),
+                    checked_out_at=datetime(2026, 10, 25, 11, 0),
+                    checked_out_by_guardian_id=None,
+                ),
+                AttendanceModel(
+                    id=uuid4(),
+                    child_id=other_service_child_id,
+                    session_id=other_session_id,
+                    checked_in_at=datetime(2026, 10, 25, 18, 10),
+                    checked_out_at=None,
+                    checked_out_by_guardian_id=None,
+                ),
+                AttendanceModel(
+                    id=nursery_attendance_id,
+                    child_id=nursery_child_id,
+                    session_id=other_room_session_id,
+                    checked_in_at=datetime(2026, 10, 25, 9, 20),
+                    checked_out_at=None,
+                    checked_out_by_guardian_id=None,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyServiceAttendanceRepository(session)
+
+        result = repository.list_active_by_service(service_id)
+
+        assert len(result) == 2
+
+        assert [
+            (item.room_name, item.child_name)
+            for item in result
+        ] == [
+            ("Kids 4-6", "Maria Silva"),
+            ("Nursery", "Beatriz Silva"),
+        ]
+
+        assert {item.attendance_id for item in result} == {
+            present_attendance_id,
+            nursery_attendance_id,
+        }
+
+        assert all(item.checked_out_at is None for item in result)
+        assert all(item.service_id == service_id for item in result)
 
     engine.dispose()

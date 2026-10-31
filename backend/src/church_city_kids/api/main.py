@@ -74,6 +74,9 @@ from church_city_kids.application.get_child_attendance_history import (
 from church_city_kids.application.get_child_details import get_child_details
 from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
+from church_city_kids.application.list_service_attendances import (
+    list_service_attendances,
+)
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -106,6 +109,7 @@ from church_city_kids.domain.errors import (
     SessionNotOpenError,
 )
 from church_city_kids.domain.user import User
+from church_city_kids.infrastructure.persistence.models import ServiceModel
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyAddChildGuardianRepository,
     SqlAlchemyCheckInRepository,
@@ -120,6 +124,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
     SqlAlchemyRemoveChildGuardianRepository,
+    SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUserRepository,
 )
@@ -432,6 +437,47 @@ def create_service_endpoint(
     return CreateServiceResponse(
         service_id=result.service_id,
     )
+
+
+@app.get("/api/services/{service_id}/attendances")
+def get_service_attendances(
+    service_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[dict[str, str | None]]:
+    
+    service = session.get(ServiceModel, service_id)
+
+    if service is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Service not found",
+        )
+
+    repository = SqlAlchemyServiceAttendanceRepository(session)
+
+    attendances = list_service_attendances(
+        service_id,
+        repository,
+    )
+
+    return [
+        {
+            "attendance_id": str(item.attendance_id),
+            "service_id": str(item.service_id),
+            "child_id": str(item.child_id),
+            "child_name": item.child_name,
+            "room_id": str(item.room_id),
+            "room_name": item.room_name,
+            "checked_in_at": item.checked_in_at.isoformat(),
+            "checked_out_at": (
+                item.checked_out_at.isoformat()
+                if item.checked_out_at is not None
+                else None
+            ),
+        }
+        for item in attendances
+    ]
 
 
 @app.post(

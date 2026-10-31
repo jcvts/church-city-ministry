@@ -22,6 +22,7 @@ from church_city_kids.application.create_service import (
     CreateServiceRequest,
     create_service,
 )
+from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.registration import (
     RegisterChildRequest,
@@ -54,6 +55,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCheckOutRepository,
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
+    SqlAlchemyListChildrenRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyRegistrationRepository,
 )
@@ -928,5 +930,65 @@ def test_create_room_repository_persists_normalized_name(
         ).scalar_one()
 
     assert normalized_name == "sala infantil"
+
+    engine.dispose()
+
+
+def test_list_children_searches_active_children_by_partial_name(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family_id = uuid4()
+
+    with Session(engine) as session:
+        session.add(FamilyModel(id=family_id, is_active=True))
+        session.flush()
+
+        session.add_all(
+            [
+                ChildModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="Maria Silva",
+                    birth_date=date(2020, 5, 12),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="Mariana Costa",
+                    birth_date=date(2019, 3, 10),
+                    is_active=True,
+                ),
+                ChildModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="Maria Oliveira",
+                    birth_date=date(2021, 7, 15),
+                    is_active=False,
+                ),
+                ChildModel(
+                    id=uuid4(),
+                    family_id=family_id,
+                    full_name="João Santos",
+                    birth_date=date(2020, 1, 20),
+                    is_active=True,
+                ),
+            ]
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        repository = SqlAlchemyListChildrenRepository(session)
+
+        result = list_children(repository, name="MARIA")
+
+    assert [child.full_name for child in result] == [
+        "Maria Silva",
+        "Mariana Costa",
+    ]
+    assert all(child.family_id == family_id for child in result)
 
     engine.dispose()

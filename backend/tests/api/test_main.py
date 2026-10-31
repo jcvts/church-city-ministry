@@ -250,6 +250,93 @@ def test_register_child(
     assert guardian.phone == "82999999999"
 
 
+def test_list_children_returns_matching_children(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    matching_child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(id=family_id, is_active=True)
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=matching_child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=date(2021, 5, 10),
+                is_active=True,
+            ),
+            ChildModel(
+                id=uuid4(),
+                family_id=family_id,
+                full_name="João Silva",
+                birth_date=date(2020, 3, 15),
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/children",
+        params={"name": "maria"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(matching_child_id),
+            "family_id": str(family_id),
+            "full_name": "Maria Silva",
+            "birth_date": "2021-05-10",
+        }
+    ]
+
+
+def test_list_children_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(
+        "/api/children",
+        params={"name": "maria"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_list_children_returns_empty_list_when_no_matches(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/children",
+        params={"name": "NomeInexistente"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_create_service(
     api_client: tuple[TestClient, Session],
 ) -> None:

@@ -8,6 +8,7 @@ from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.create_room import CreateRoomRepository
 from church_city_kids.application.create_service import CreateServiceRepository
+from church_city_kids.application.list_children import ListChildrenRepository
 from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.domain.attendance import Attendance
@@ -67,6 +68,34 @@ class ChildRepository:
             birth_date=model.birth_date,
             is_active=model.is_active,
         )
+
+
+class SqlAlchemyListChildrenRepository(ListChildrenRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def search_active_children(self, name: str) -> list[Child]:
+        statement = (
+            select(ChildModel)
+            .where(
+                ChildModel.is_active.is_(True),
+                func.lower(ChildModel.full_name).contains(name.lower()),
+            )
+            .order_by(ChildModel.full_name)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Child(
+                id=model.id,
+                family_id=model.family_id,
+                full_name=model.full_name,
+                birth_date=model.birth_date,
+                is_active=model.is_active,
+            )
+            for model in models
+        ]
 
 
 class FamilyRepository:

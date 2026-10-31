@@ -18,6 +18,13 @@ class RegisterChildResponse(BaseModel):
     guardian_id: UUID
 
 
+class ChildResponse(BaseModel):
+    id: UUID
+    family_id: UUID
+    full_name: str
+    birth_date: date
+
+
 class CreateServiceBody(BaseModel):
     name: str
     starts_at: datetime

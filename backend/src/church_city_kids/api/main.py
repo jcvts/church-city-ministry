@@ -14,6 +14,7 @@ from church_city_kids.api.schemas import (
     CheckInResponse,
     CheckOutBody,
     CheckOutResponse,
+    ChildResponse,
     CreateRoomBody,
     CreateRoomResponse,
     CreateServiceBody,
@@ -53,6 +54,7 @@ from church_city_kids.application.create_session import (
     ServiceNotFoundError,
     create_session,
 )
+from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.registration import (
     RegisterChildRequest,
@@ -79,6 +81,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
+    SqlAlchemyListChildrenRepository,
     SqlAlchemyListRoomsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
@@ -133,6 +136,30 @@ def register_child_endpoint(
         child_id=result.child_id,
         guardian_id=result.guardian_id,
     )
+
+
+@app.get(
+    "/api/children",
+    response_model=list[ChildResponse],
+)
+def list_children_endpoint(
+    name: str,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[ChildResponse]:
+    repository = SqlAlchemyListChildrenRepository(session)
+
+    result = list_children(repository, name=name)
+
+    return [
+        ChildResponse(
+            id=child.id,
+            family_id=child.family_id,
+            full_name=child.full_name,
+            birth_date=child.birth_date,
+        )
+        for child in result
+    ]
 
 
 @app.post(

@@ -68,6 +68,9 @@ from church_city_kids.application.create_session import (
     ServiceNotFoundError,
     create_session,
 )
+from church_city_kids.application.get_child_attendance_history import (
+    get_child_attendance_history,
+)
 from church_city_kids.application.get_child_details import get_child_details
 from church_city_kids.application.list_children import list_children
 from church_city_kids.application.list_rooms import list_rooms
@@ -107,6 +110,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyAddChildGuardianRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
+    SqlAlchemyChildAttendanceHistoryRepository,
     SqlAlchemyCreateRoomRepository,
     SqlAlchemyCreateServiceRepository,
     SqlAlchemyCreateSessionRepository,
@@ -230,6 +234,42 @@ def get_child_details_endpoint(
             for guardian in result.guardians
         ],
     )
+
+
+@app.get("/api/children/{child_id}/attendance")
+def get_child_attendance_history_endpoint(
+    child_id: UUID,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[dict[str, str | None]]:
+    child = SqlAlchemyGetChildDetailsRepository(session).get_child(child_id)
+
+    if child is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found",
+        )
+
+    repository = SqlAlchemyChildAttendanceHistoryRepository(session)
+    history = get_child_attendance_history(child_id, repository)
+
+    return [
+        {
+            "attendance_id": str(item.attendance_id),
+            "child_id": str(item.child_id),
+            "service_name": item.service_name,
+            "service_starts_at": item.service_starts_at.isoformat(),
+            "room_name": item.room_name,
+            "checked_in_at": item.checked_in_at.isoformat(),
+            "checked_out_at": (
+                item.checked_out_at.isoformat()
+                if item.checked_out_at is not None
+                else None
+            ),
+            "checked_out_by_guardian_name": item.checked_out_by_guardian_name,
+        }
+        for item in history
+    ]
 
 
 @app.post(

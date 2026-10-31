@@ -9,6 +9,9 @@ from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.create_room import CreateRoomRepository
 from church_city_kids.application.create_service import CreateServiceRepository
+from church_city_kids.application.get_child_attendance_history import (
+    ChildAttendanceHistoryItem,
+)
 from church_city_kids.application.get_child_details import GetChildDetailsRepository
 from church_city_kids.application.list_children import ListChildrenRepository
 from church_city_kids.application.list_rooms import ListRoomsRepository
@@ -701,3 +704,66 @@ class SqlAlchemyRemoveChildGuardianRepository:
             raise ValueError("Child guardian link not found")
 
         self._session.delete(model)
+
+
+class SqlAlchemyChildAttendanceHistoryRepository:
+    def __init__(self, session: DbSession) -> None:
+        self.session = session
+
+    def list_by_child(
+        self,
+        child_id: UUID,
+    ) -> list[ChildAttendanceHistoryItem]:
+        statement = (
+            select(
+                AttendanceModel,
+                ServiceModel.name,
+                ServiceModel.starts_at,
+                RoomModel.name,
+                GuardianModel.full_name,
+            )
+            .join(
+                SessionModel,
+                AttendanceModel.session_id == SessionModel.id,
+            )
+            .join(
+                ServiceModel,
+                SessionModel.service_id == ServiceModel.id,
+            )
+            .join(
+                RoomModel,
+                SessionModel.room_id == RoomModel.id,
+            )
+            .outerjoin(
+                GuardianModel,
+                AttendanceModel.checked_out_by_guardian_id
+                == GuardianModel.id,
+            )
+            .where(AttendanceModel.child_id == child_id)
+            .order_by(
+                AttendanceModel.checked_in_at.desc(),
+                AttendanceModel.id.desc(),
+            )
+        )
+
+        rows = self.session.execute(statement).all()
+
+        return [
+            ChildAttendanceHistoryItem(
+                attendance_id=attendance.id,
+                child_id=attendance.child_id,
+                service_name=service_name,
+                service_starts_at=service_starts_at,
+                room_name=room_name,
+                checked_in_at=attendance.checked_in_at,
+                checked_out_at=attendance.checked_out_at,
+                checked_out_by_guardian_name=guardian_name,
+            )
+            for (
+                attendance,
+                service_name,
+                service_starts_at,
+                room_name,
+                guardian_name,
+            ) in rows
+        ]

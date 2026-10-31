@@ -2784,3 +2784,187 @@ def test_delete_child_guardian_requires_authentication(
     )
 
     assert response.status_code == 401
+
+
+def test_get_child_attendance_history_returns_empty_list(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/children/{child_id}/attendance",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_child_attendance_history_returns_404_when_child_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    child_id = uuid4()
+
+    response = client.get(
+        f"/api/children/{child_id}/attendance",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Child not found",
+    }
+
+
+def test_get_child_attendance_history_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    child_id = uuid4()
+
+    response = client.get(
+        f"/api/children/{child_id}/attendance",
+    )
+
+    assert response.status_code == 401
+
+
+def test_get_child_attendance_history_returns_attendance_details(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    family_id = uuid4()
+    child_id = uuid4()
+    guardian_id = uuid4()
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    attendance_id = uuid4()
+
+    service_starts_at = datetime(2026, 10, 25, 9, 0)
+    checked_in_at = datetime(2026, 10, 25, 9, 10)
+    checked_out_at = datetime(2026, 10, 25, 11, 0)
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            ChildModel(
+                id=child_id,
+                family_id=family_id,
+                full_name="Maria Silva",
+                birth_date=date(2021, 5, 10),
+                is_active=True,
+            ),
+            GuardianModel(
+                id=guardian_id,
+                family_id=family_id,
+                full_name="Ana Silva",
+                phone="82999999999",
+                is_active=True,
+            ),
+            ServiceModel(
+                id=service_id,
+                name="Sunday Morning",
+                starts_at=service_starts_at,
+                ends_at=None,
+            ),
+            RoomModel(
+                id=room_id,
+                name="Kids 4-6",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        SessionModel(
+            id=session_id,
+            service_id=service_id,
+            room_id=room_id,
+            name="Kids 4-6",
+            min_age_years=4,
+            max_age_years=6,
+            status="CLOSED",
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        AttendanceModel(
+            id=attendance_id,
+            child_id=child_id,
+            session_id=session_id,
+            checked_in_at=checked_in_at,
+            checked_out_at=checked_out_at,
+            checked_out_by_guardian_id=guardian_id,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        f"/api/children/{child_id}/attendance",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "attendance_id": str(attendance_id),
+            "child_id": str(child_id),
+            "service_name": "Sunday Morning",
+            "service_starts_at": "2026-10-25T09:00:00",
+            "room_name": "Kids 4-6",
+            "checked_in_at": "2026-10-25T09:10:00",
+            "checked_out_at": "2026-10-25T11:00:00",
+            "checked_out_by_guardian_name": "Ana Silva",
+        }
+    ]

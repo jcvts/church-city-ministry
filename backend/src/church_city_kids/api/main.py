@@ -7,6 +7,7 @@ from church_city_kids.api.dependencies import (
     get_db_session,
     get_jwt_token_service,
     require_admin,
+    require_bearer_token,
 )
 from church_city_kids.api.schemas import (
     CheckInBody,
@@ -290,6 +291,7 @@ def create_session_endpoint(
 def check_in_child_endpoint(
     body: CheckInBody,
     db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> CheckInResponse:
     repository = SqlAlchemyCheckInRepository(db_session)
 
@@ -361,6 +363,7 @@ def check_in_child_endpoint(
 def check_out_child_endpoint(
     body: CheckOutBody,
     db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> CheckOutResponse:
     repository = SqlAlchemyCheckOutRepository(db_session)
 

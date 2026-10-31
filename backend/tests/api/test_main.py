@@ -38,6 +38,34 @@ from church_city_kids.infrastructure.security.passwords import (
 )
 
 
+def create_authenticated_headers(
+    session: Session,
+    *,
+    role: str = "volunteer",
+) -> dict[str, str]:
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username=f"test-user-{user_id}",
+            password_hash="test-hash",
+            is_active=True,
+            role=role,
+        )
+    )
+    session.commit()
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+
+    token = token_service.create_access_token(user_id)
+
+    return {"Authorization": f"Bearer {token}"}
+
+
 def create_check_in_scenario(
     session: Session,
     *,
@@ -597,6 +625,7 @@ def test_check_in_child_creates_attendance(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -605,6 +634,7 @@ def test_check_in_child_creates_attendance(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -632,9 +662,11 @@ def test_check_in_child_returns_404_when_child_does_not_exist(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(uuid4()),
             "session_id": str(uuid4()),
@@ -654,6 +686,7 @@ def test_check_in_child_returns_404_when_session_does_not_exist(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     family_id = uuid4()
     child_id = uuid4()
@@ -679,6 +712,7 @@ def test_check_in_child_returns_404_when_session_does_not_exist(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(uuid4()),
@@ -698,6 +732,7 @@ def test_check_in_child_returns_409_when_already_checked_in(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -709,11 +744,19 @@ def test_check_in_child_returns_409_when_already_checked_in(
         "occurred_at": "2026-10-17T10:00:00",
     }
 
-    first_response = client.post("/api/check-ins", json=payload)
+    first_response = client.post(
+        "/api/check-ins",
+        json=payload,
+        headers=headers,
+    )
 
     assert first_response.status_code == 201
 
-    second_response = client.post("/api/check-ins", json=payload)
+    second_response = client.post(
+        "/api/check-ins", 
+        json=payload,
+        headers=headers,
+    )
 
     assert second_response.status_code == 409
     assert second_response.json() == {
@@ -727,6 +770,7 @@ def test_check_in_child_returns_409_when_session_is_closed(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -736,6 +780,7 @@ def test_check_in_child_returns_409_when_session_is_closed(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -754,6 +799,7 @@ def test_check_in_child_returns_409_when_child_is_inactive(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -763,6 +809,7 @@ def test_check_in_child_returns_409_when_child_is_inactive(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -781,6 +828,7 @@ def test_check_in_child_returns_409_when_family_is_inactive(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -790,6 +838,7 @@ def test_check_in_child_returns_409_when_family_is_inactive(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -808,6 +857,7 @@ def test_check_in_child_returns_422_when_child_age_is_out_of_range(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -817,6 +867,7 @@ def test_check_in_child_returns_422_when_child_age_is_out_of_range(
 
     response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -835,6 +886,7 @@ def test_check_out_child_updates_attendance(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -847,6 +899,7 @@ def test_check_out_child_updates_attendance(
 
     check_in_response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -860,6 +913,7 @@ def test_check_out_child_updates_attendance(
 
     response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(attendance_id),
             "guardian_id": str(guardian_id),
@@ -889,6 +943,7 @@ def test_check_out_child_returns_403_for_unauthorized_guardian(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -896,6 +951,7 @@ def test_check_out_child_returns_403_for_unauthorized_guardian(
 
     check_in_response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -909,6 +965,7 @@ def test_check_out_child_returns_403_for_unauthorized_guardian(
     # This guardian has no authorization to pick up the child.
     response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(attendance_id),
             "guardian_id": str(uuid4()),
@@ -937,9 +994,11 @@ def test_check_out_child_returns_404_when_attendance_does_not_exist(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(uuid4()),
             "guardian_id": str(uuid4()),
@@ -959,6 +1018,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -971,6 +1031,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
 
     check_in_response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -983,6 +1044,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
 
     first_response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(attendance_id),
             "occurred_at": "2026-10-17T11:00:00",
@@ -994,6 +1056,7 @@ def test_check_out_child_returns_409_when_already_checked_out(
 
     second_response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(attendance_id),
             "occurred_at": "2026-10-17T11:30:00",
@@ -1022,6 +1085,7 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
 
     child_id, session_id = create_check_in_scenario(
         verification_session,
@@ -1034,6 +1098,7 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
 
     check_in_response = client.post(
         "/api/check-ins",
+        headers=headers,
         json={
             "child_id": str(child_id),
             "session_id": str(session_id),
@@ -1046,6 +1111,7 @@ def test_check_out_child_returns_422_when_checkout_precedes_checkin(
 
     response = client.post(
         "/api/check-outs",
+        headers=headers,
         json={
             "attendance_id": str(attendance_id),
             "guardian_id": str(guardian_id),
@@ -1557,3 +1623,42 @@ def test_admin_settings_rolls_back_when_commit_fails(
     settings = verification_session.get(MinistrySettingsModel, 1)
     assert settings is not None
     assert settings.pager_required is True
+
+
+def test_check_in_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    child_id, session_id = create_check_in_scenario(
+        verification_session
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/check-ins",
+        json={
+            "child_id": str(child_id),
+            "session_id": str(session_id),
+            "occurred_at": "2026-10-17T09:30:00",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_check_out_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    response = client.post(
+        "/api/check-outs",
+        json={
+            "attendance_id": str(uuid4()),
+            "guardian_id": str(uuid4()),
+            "occurred_at": "2026-10-17T11:00:00",
+        },
+    )
+
+    assert response.status_code == 401

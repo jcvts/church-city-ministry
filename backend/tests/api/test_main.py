@@ -209,9 +209,11 @@ def test_register_child(
         )
     )
     verification_session.commit()
+    headers = create_authenticated_headers(verification_session)
 
     response = client.post(
         "/api/children",
+        headers=headers,
         json={
             "child_name": "Maria Silva",
             "birth_date": "2021-05-10",
@@ -252,9 +254,14 @@ def test_create_service(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     response = client.post(
         "/api/services",
+        headers=headers,
         json={
             "name": "Sunday Service",
             "starts_at": "2026-10-04T19:00:00",
@@ -277,9 +284,14 @@ def test_create_room(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     response = client.post(
         "/api/rooms",
+        headers=headers,
         json={"name": "Sala Infantil"},
     )
 
@@ -298,6 +310,10 @@ def test_list_rooms_returns_only_active_rooms(
 ) -> None:
     client, verification_session = api_client
     active_room_id = uuid4()
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
 
     verification_session.add_all(
         [
@@ -317,7 +333,10 @@ def test_list_rooms_returns_only_active_rooms(
     )
     verification_session.commit()
 
-    response = client.get("/api/rooms")
+    response = client.get(
+        "/api/rooms",
+        headers=headers,
+    )
 
     assert response.status_code == 200
     assert response.json() == [
@@ -332,6 +351,10 @@ def test_create_session(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     service_id = uuid4()
     room_id = uuid4()
@@ -355,6 +378,7 @@ def test_create_session(
 
     response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             "service_id": str(service_id),
             "room_id": str(room_id),
@@ -386,9 +410,14 @@ def test_create_session_returns_404_when_service_not_found(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             "service_id": str(uuid4()),
             "room_id": str(uuid4()),
@@ -410,7 +439,10 @@ def test_create_session_returns_404_when_room_not_found(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
-
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
     service_id = uuid4()
 
     verification_session.add(
@@ -425,6 +457,7 @@ def test_create_session_returns_404_when_room_not_found(
 
     response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             "service_id": str(service_id),
             "room_id": str(uuid4()),
@@ -446,7 +479,10 @@ def test_create_session_returns_409_when_room_is_inactive(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
-
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )    
     service_id = uuid4()
     room_id = uuid4()
 
@@ -469,6 +505,7 @@ def test_create_session_returns_409_when_room_is_inactive(
 
     response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             "service_id": str(service_id),
             "room_id": str(room_id),
@@ -490,7 +527,10 @@ def test_create_session_returns_409_when_room_already_assigned(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
-
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
     service_id = uuid4()
     room_id = uuid4()
 
@@ -521,6 +561,7 @@ def test_create_session_returns_409_when_room_already_assigned(
 
     first_response = client.post(
         "/api/sessions",
+        headers=headers,
         json=payload,
     )
 
@@ -528,6 +569,7 @@ def test_create_session_returns_409_when_room_already_assigned(
 
     duplicate_response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             **payload,
             "name": "Outra Turma",
@@ -556,6 +598,10 @@ def test_create_session_returns_422_for_invalid_age_range(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     service_id = uuid4()
     room_id = uuid4()
@@ -579,6 +625,7 @@ def test_create_session_returns_422_for_invalid_age_range(
 
     response = client.post(
         "/api/sessions",
+        headers=headers,
         json={
             "service_id": str(service_id),
             "room_id": str(room_id),
@@ -600,9 +647,14 @@ def test_create_room_returns_409_for_duplicate_name(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
 
     first_response = client.post(
         "/api/rooms",
+        headers=headers,
         json={"name": "Sala Infantil"},
     )
 
@@ -610,6 +662,7 @@ def test_create_room_returns_409_for_duplicate_name(
 
     duplicate_response = client.post(
         "/api/rooms",
+        headers=headers,
         json={"name": "  sala   infantil  "},
     )
 
@@ -1662,3 +1715,87 @@ def test_check_out_requires_authentication(
     )
 
     assert response.status_code == 401
+
+
+def test_register_child_requires_authentication(api_client):
+    client, _ = api_client
+
+    response = client.post("/api/children", json={})
+
+    assert response.status_code == 401
+
+
+def test_create_service_requires_authentication(api_client):
+    client, _ = api_client
+
+    response = client.post("/api/services", json={})
+
+    assert response.status_code == 401
+
+
+def test_create_service_rejects_volunteer(api_client):
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/services",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_room_requires_authentication(api_client):
+    client, _ = api_client
+    response = client.post("/api/rooms", json={})
+    assert response.status_code == 401
+
+
+def test_create_room_rejects_volunteer(api_client):
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/rooms",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 403
+
+
+def test_list_rooms_requires_authentication(api_client):
+    client, _ = api_client
+    response = client.get("/api/rooms")
+    assert response.status_code == 401
+
+
+def test_create_session_requires_authentication(api_client):
+    client, _ = api_client
+    response = client.post("/api/sessions", json={})
+    assert response.status_code == 401
+
+
+def test_create_session_rejects_volunteer(api_client):
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/sessions",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 403

@@ -106,6 +106,7 @@ def health_check() -> dict[str, str]:
 def register_child_endpoint(
     body: RegisterChildBody,
     session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> RegisterChildResponse:
     repository = SqlAlchemyRegistrationRepository(session)
 
@@ -142,6 +143,7 @@ def register_child_endpoint(
 def create_service_endpoint(
     body: CreateServiceBody,
     session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
 ) -> CreateServiceResponse:
     repository = SqlAlchemyCreateServiceRepository(session)
 
@@ -174,6 +176,7 @@ def create_service_endpoint(
 def create_room_endpoint(
     body: CreateRoomBody,
     session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
 ) -> CreateRoomResponse:
     repository = SqlAlchemyCreateRoomRepository(session)
 
@@ -205,6 +208,7 @@ def create_room_endpoint(
 )
 def list_rooms_endpoint(
     session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> list[RoomResponse]:
     repository = SqlAlchemyListRoomsRepository(session)
 
@@ -227,6 +231,7 @@ def list_rooms_endpoint(
 def create_session_endpoint(
     body: CreateSessionBody,
     db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
 ) -> CreateSessionResponse:
     repository = SqlAlchemyCreateSessionRepository(db_session)
 

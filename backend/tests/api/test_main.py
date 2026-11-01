@@ -4052,3 +4052,164 @@ def test_update_guardian_can_remove_phone(
     assert saved_guardian.full_name == "Ana Silva"
     assert saved_guardian.family_id == family.id
     assert saved_guardian.is_active is True
+
+
+def test_update_family_admin_can_deactivate_family(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family(is_active=True)
+    FamilyRepository(session).add(family)
+    session.commit()
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    response = client.patch(
+        f"/api/families/{family.id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    session.expire_all()
+    saved_family = FamilyRepository(session).get(family.id)
+
+    assert saved_family is not None
+    assert saved_family.is_active is False
+
+
+def test_update_family_admin_can_reactivate_family(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family(is_active=False)
+    FamilyRepository(session).add(family)
+    session.commit()
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    response = client.patch(
+        f"/api/families/{family.id}",
+        json={"is_active": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    session.expire_all()
+    saved_family = FamilyRepository(session).get(family.id)
+
+    assert saved_family is not None
+    assert saved_family.id == family.id
+    assert saved_family.is_active is True
+
+
+def test_update_family_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family(is_active=True)
+    FamilyRepository(session).add(family)
+    session.commit()
+
+    response = client.patch(
+        f"/api/families/{family.id}",
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 401
+
+    session.expire_all()
+    saved_family = FamilyRepository(session).get(family.id)
+
+    assert saved_family is not None
+    assert saved_family.is_active is True
+
+
+def test_update_family_forbids_volunteers(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family(is_active=True)
+    FamilyRepository(session).add(family)
+    session.commit()
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        f"/api/families/{family.id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+    session.expire_all()
+    saved_family = FamilyRepository(session).get(family.id)
+
+    assert saved_family is not None
+    assert saved_family.is_active is True
+
+
+def test_update_family_returns_404_when_family_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    response = client.patch(
+        f"/api/families/{uuid4()}",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Family not found"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"is_active": None},
+        {"is_active": "invalid"},
+        {"is_active": 2},
+        {"is_active": []},
+    ],
+)
+def test_update_family_rejects_invalid_payload(
+    api_client: tuple[TestClient, Session],
+    payload: dict[str, object],
+) -> None:
+    client, session = api_client
+
+    family = Family(is_active=True)
+    FamilyRepository(session).add(family)
+    session.commit()
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    response = client.patch(
+        f"/api/families/{family.id}",
+        json=payload,
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+    saved_family = FamilyRepository(session).get(family.id)
+
+    assert saved_family is not None
+    assert saved_family.is_active is True

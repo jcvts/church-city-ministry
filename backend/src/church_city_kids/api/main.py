@@ -33,6 +33,7 @@ from church_city_kids.api.schemas import (
     RoomResponse,
     UpdateChildBody,
     UpdateChildGuardianBody,
+    UpdateFamilyBody,
     UpdateGuardianBody,
     UpdateMinistrySettingsBody,
 )
@@ -110,6 +111,13 @@ from church_city_kids.application.update_child_guardian import (
     UpdateChildGuardianRequest,
     update_child_guardian,
 )
+from church_city_kids.application.update_family import (
+    FamilyNotFoundError as UpdateFamilyNotFoundError,
+)
+from church_city_kids.application.update_family import (
+    UpdateFamilyRequest,
+    update_family,
+)
 from church_city_kids.application.update_guardian import (
     GuardianNotFoundError as UpdateGuardianNotFoundError,
 )
@@ -155,6 +163,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUpdateChildRepository,
+    SqlAlchemyUpdateFamilyRepository,
     SqlAlchemyUpdateGuardianRepository,
     SqlAlchemyUserRepository,
 )
@@ -370,6 +379,39 @@ def get_family_details_endpoint(
             for guardian in family.guardians
         ],
     }
+
+
+@app.patch("/api/families/{family_id}", status_code=status.HTTP_200_OK)
+def update_family_endpoint(
+    family_id: UUID,
+    body: UpdateFamilyBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, str]:
+    repository = SqlAlchemyUpdateFamilyRepository(session)
+
+    try:
+        update_family(
+            UpdateFamilyRequest(
+                family_id=family_id,
+                is_active=body.is_active,
+            ),
+            repository,
+        )
+        session.commit()
+
+    except UpdateFamilyNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail="Family not found",
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return {"status": "updated"}
 
 
 @app.get("/api/guardians")

@@ -198,3 +198,7 @@ class UpdateGuardianBody(BaseModel):
                 raise ValueError("Guardian name cannot be blank")
 
         return self
+
+
+class UpdateFamilyBody(BaseModel):
+    is_active: bool

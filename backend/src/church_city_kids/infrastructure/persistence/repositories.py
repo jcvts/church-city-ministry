@@ -157,6 +157,22 @@ class FamilyRepository:
         )
 
 
+class SqlAlchemyUpdateFamilyRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_family(self, family_id: UUID) -> Family | None:
+        return FamilyRepository(self._session).get(family_id)
+
+    def save_family(self, family: Family) -> None:
+        model = self._session.get(FamilyModel, family.id)
+
+        if model is None:
+            raise ValueError("Family not found during update")
+
+        model.is_active = family.is_active
+
+
 class SqlAlchemyGetFamilyDetailsRepository(GetFamilyDetailsRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session

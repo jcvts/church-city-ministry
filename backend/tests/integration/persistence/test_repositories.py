@@ -45,6 +45,10 @@ from church_city_kids.application.update_child_guardian import (
     UpdateChildGuardianRequest,
     update_child_guardian,
 )
+from church_city_kids.application.update_family import (
+    UpdateFamilyRequest,
+    update_family,
+)
 from church_city_kids.application.update_guardian import (
     UpdateGuardianRequest,
     update_guardian,
@@ -96,6 +100,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUpdateChildRepository,
+    SqlAlchemyUpdateFamilyRepository,
     SqlAlchemyUpdateGuardianRepository,
 )
 
@@ -2641,3 +2646,106 @@ def test_update_guardian_repository_can_remove_phone(
         assert saved_guardian.full_name == "Ana Silva"
         assert saved_guardian.family_id == family.id
         assert saved_guardian.is_active is True
+
+
+def test_update_family_repository_preserves_related_records(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Maria Silva",
+        birth_date=date(2021, 5, 10),
+    )
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+    link = ChildGuardian(
+        child_id=child.id,
+        guardian_id=guardian.id,
+        relationship="mother",
+    )
+
+    # Create the original records.
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        GuardianRepository(session).add(guardian)
+        session.flush()
+
+        ChildGuardianRepository(session).add(link)
+        session.commit()
+
+    # Deactivate the family.
+    with Session(engine) as session:
+        update_family(
+            UpdateFamilyRequest(
+                family_id=family.id,
+                is_active=False,
+            ),
+            SqlAlchemyUpdateFamilyRepository(session),
+        )
+        session.commit()
+
+    # Verify persistence and preservation of related records.
+    with Session(engine) as session:
+        saved_family = FamilyRepository(session).get(family.id)
+        saved_child = ChildRepository(session).get(child.id)
+        saved_guardian = GuardianRepository(session).get(guardian.id)
+        saved_link = session.get(ChildGuardianModel, link.id)
+
+        assert saved_family is not None
+        assert saved_family.is_active is False
+
+        assert saved_child is not None
+        assert saved_child.full_name == "Maria Silva"
+        assert saved_child.is_active is True
+
+        assert saved_guardian is not None
+        assert saved_guardian.full_name == "Ana Silva"
+        assert saved_guardian.phone == "82999999999"
+        assert saved_guardian.is_active is True
+
+        assert saved_link is not None
+        assert saved_link.child_id == child.id
+        assert saved_link.guardian_id == guardian.id
+        assert saved_link.relationship == "mother"
+
+
+def test_update_family_repository_can_reactivate_family(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family(is_active=False)
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.commit()
+
+    # Reactivate the existing family.
+    with Session(engine) as session:
+        update_family(
+            UpdateFamilyRequest(
+                family_id=family.id,
+                is_active=True,
+            ),
+            SqlAlchemyUpdateFamilyRepository(session),
+        )
+        session.commit()
+
+    # Verify the change in a new database session.
+    with Session(engine) as session:
+        saved_family = FamilyRepository(session).get(family.id)
+
+        assert saved_family is not None
+        assert saved_family.id == family.id
+        assert saved_family.is_active is True

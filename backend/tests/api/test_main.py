@@ -3654,3 +3654,224 @@ def test_get_guardian_details_returns_empty_children_when_unlinked(
         "is_active": True,
         "children": [],
     }
+
+
+def test_update_child_name_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    headers = create_authenticated_headers(verification_session)
+
+    response = client.patch(
+        f"/api/children/{child_id}",
+        headers=headers,
+        json={"full_name": "Maria Oliveira"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    # Refresh the ORM object to read the committed database state.
+    verification_session.expire_all()
+
+    saved_child = verification_session.get(ChildModel, child_id)
+
+    assert saved_child is not None
+    assert saved_child.full_name == "Maria Oliveira"
+    assert saved_child.birth_date == date(2021, 5, 10)
+    assert saved_child.family_id == family_id
+    assert saved_child.is_active is True
+
+
+def test_update_child_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/children/{child_id}",
+        json={"full_name": "Maria Oliveira"},
+    )
+
+    assert response.status_code == 401
+
+    verification_session.expire_all()
+    saved_child = verification_session.get(ChildModel, child_id)
+
+    assert saved_child is not None
+    assert saved_child.full_name == "Maria Silva"
+
+
+def test_update_child_returns_404_when_child_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(verification_session)
+    nonexistent_child_id = uuid4()
+
+    response = client.patch(
+        f"/api/children/{nonexistent_child_id}",
+        headers=headers,
+        json={"full_name": "Maria Oliveira"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Child not found"}
+
+    assert (
+        verification_session.get(ChildModel, nonexistent_child_id)
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"full_name": ""},
+        {"full_name": "   "},
+        {"full_name": None},
+        {"birth_date": None},
+        {"birth_date": "not-a-date"},
+    ],
+)
+def test_update_child_rejects_invalid_payload(
+    api_client: tuple[TestClient, Session],
+    payload: dict[str, object],
+) -> None:
+    client, verification_session = api_client
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    headers = create_authenticated_headers(verification_session)
+
+    response = client.patch(
+        f"/api/children/{child_id}",
+        headers=headers,
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+    verification_session.expire_all()
+    saved_child = verification_session.get(ChildModel, child_id)
+
+    assert saved_child is not None
+    assert saved_child.full_name == "Maria Silva"
+    assert saved_child.birth_date == date(2021, 5, 10)
+    assert saved_child.family_id == family_id
+    assert saved_child.is_active is True
+
+
+def test_update_child_birth_date_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    family_id = uuid4()
+    child_id = uuid4()
+
+    verification_session.add(
+        FamilyModel(
+            id=family_id,
+            is_active=True,
+        )
+    )
+    verification_session.flush()
+
+    verification_session.add(
+        ChildModel(
+            id=child_id,
+            family_id=family_id,
+            full_name="Maria Silva",
+            birth_date=date(2021, 5, 10),
+            is_active=True,
+        )
+    )
+    verification_session.commit()
+
+    headers = create_authenticated_headers(verification_session)
+
+    response = client.patch(
+        f"/api/children/{child_id}",
+        headers=headers,
+        json={"birth_date": "2020-08-15"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    verification_session.expire_all()
+    saved_child = verification_session.get(ChildModel, child_id)
+
+    assert saved_child is not None
+    assert saved_child.birth_date == date(2020, 8, 15)
+    assert saved_child.full_name == "Maria Silva"
+    assert saved_child.family_id == family_id
+    assert saved_child.is_active is True

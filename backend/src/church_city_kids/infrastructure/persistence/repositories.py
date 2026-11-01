@@ -88,6 +88,23 @@ class ChildRepository:
         )
 
 
+class SqlAlchemyUpdateChildRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_child(self, child_id: UUID) -> Child | None:
+        return ChildRepository(self._session).get(child_id)
+
+    def save_child(self, child: Child) -> None:
+        model = self._session.get(ChildModel, child.id)
+
+        if model is None:
+            raise ValueError("Child not found during update")
+
+        model.full_name = child.full_name
+        model.birth_date = child.birth_date
+
+
 class SqlAlchemyListChildrenRepository(ListChildrenRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session

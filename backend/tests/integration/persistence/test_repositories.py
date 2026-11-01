@@ -37,6 +37,10 @@ from church_city_kids.application.remove_child_guardian import (
     RemoveChildGuardianRequest,
     remove_child_guardian,
 )
+from church_city_kids.application.update_child import (
+    UpdateChildRequest,
+    update_child,
+)
 from church_city_kids.application.update_child_guardian import (
     UpdateChildGuardianRequest,
     update_child_guardian,
@@ -87,6 +91,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyRemoveChildGuardianRepository,
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
+    SqlAlchemyUpdateChildRepository,
 )
 
 
@@ -2498,3 +2503,49 @@ def test_get_guardian_details_repository_loads_children_across_families(
         assert second_link.authorized_pickup is False
 
     engine.dispose()
+
+
+def test_update_child_repository_persists_changes(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    child = Child(
+        family_id=family.id,
+        full_name="Maria Silva",
+        birth_date=date(2021, 5, 10),
+    )
+
+    # Create the original records.
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        ChildRepository(session).add(child)
+        session.commit()
+
+    # Update through the application use case.
+    with Session(engine) as session:
+        repository = SqlAlchemyUpdateChildRepository(session)
+
+        update_child(
+            UpdateChildRequest(
+                child_id=child.id,
+                full_name="Maria Oliveira",
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    # Verify persistence using a new database session.
+    with Session(engine) as session:
+        saved_child = ChildRepository(session).get(child.id)
+
+        assert saved_child is not None
+        assert saved_child.full_name == "Maria Oliveira"
+        assert saved_child.birth_date == date(2021, 5, 10)
+        assert saved_child.family_id == family.id
+        assert saved_child.is_active is True

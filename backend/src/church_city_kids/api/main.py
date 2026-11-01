@@ -31,6 +31,7 @@ from church_city_kids.api.schemas import (
     RegisterChildBody,
     RegisterChildResponse,
     RoomResponse,
+    UpdateChildBody,
     UpdateChildGuardianBody,
     UpdateMinistrySettingsBody,
 )
@@ -96,6 +97,13 @@ from church_city_kids.application.remove_child_guardian import (
     RemoveChildGuardianRequest,
     remove_child_guardian,
 )
+from church_city_kids.application.update_child import (
+    ChildNotFoundError as UpdateChildNotFoundError,
+)
+from church_city_kids.application.update_child import (
+    UpdateChildRequest,
+    update_child,
+)
 from church_city_kids.application.update_child_guardian import (
     ChildGuardianNotFoundError,
     UpdateChildGuardianRequest,
@@ -138,6 +146,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyRemoveChildGuardianRepository,
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
+    SqlAlchemyUpdateChildRepository,
     SqlAlchemyUserRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
@@ -927,3 +936,40 @@ def login_endpoint(
     return LoginResponse(
         access_token=token_service.create_access_token(user.id),
     )
+
+
+@app.patch(
+    "/api/children/{child_id}",
+    status_code=status.HTTP_200_OK,
+)
+def update_child_endpoint(
+    child_id: UUID,
+    body: UpdateChildBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> dict[str, str]:
+    repository = SqlAlchemyUpdateChildRepository(session)
+    updates = body.model_dump(exclude_unset=True)
+
+    try:
+        update_child(
+            UpdateChildRequest(
+                child_id=child_id,
+                **updates,
+            ),
+            repository,
+        )
+        session.commit()
+
+    except UpdateChildNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail="Child not found",
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return {"status": "updated"}

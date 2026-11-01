@@ -160,3 +160,25 @@ class UpdateChildGuardianBody(BaseModel):
             )
 
         return self
+
+
+class UpdateChildBody(BaseModel):
+    full_name: str | None = None
+    birth_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> "UpdateChildBody":
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+
+        if "full_name" in self.model_fields_set:
+            if self.full_name is None or not self.full_name.strip():
+                raise ValueError("Child name cannot be blank")
+
+        if (
+            "birth_date" in self.model_fields_set
+            and self.birth_date is None
+        ):
+            raise ValueError("Birth date cannot be null")
+
+        return self

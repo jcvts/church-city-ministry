@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, StrictBool, model_validator
@@ -75,6 +76,18 @@ class CreateSessionBody(BaseModel):
 
 class CreateSessionResponse(BaseModel):
     session_id: UUID
+
+
+class CreateUserBody(BaseModel):
+    username: str
+    password: str
+
+
+class CreateUserResponse(BaseModel):
+    id: UUID
+    username: str
+    role: Literal["admin", "volunteer"]
+    is_active: bool
 
 
 class CheckInBody(BaseModel):

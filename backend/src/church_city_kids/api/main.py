@@ -25,6 +25,8 @@ from church_city_kids.api.schemas import (
     CreateServiceResponse,
     CreateSessionBody,
     CreateSessionResponse,
+    CreateUserBody,
+    CreateUserResponse,
     GuardianDetailResponse,
     LoginBody,
     LoginResponse,
@@ -70,6 +72,11 @@ from church_city_kids.application.create_session import (
     RoomNotFoundError,
     ServiceNotFoundError,
     create_session,
+)
+from church_city_kids.application.create_user import (
+    CreateUserRequest,
+    UsernameAlreadyExistsError,
+    create_user,
 )
 from church_city_kids.application.get_child_attendance_history import (
     get_child_attendance_history,
@@ -1053,3 +1060,49 @@ def update_guardian_endpoint(
         raise
 
     return {"status": "updated"}
+
+
+@app.post(
+    "/api/users",
+    response_model=CreateUserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_user_endpoint(
+    body: CreateUserBody,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
+) -> CreateUserResponse:
+    repository = SqlAlchemyUserRepository(db_session)
+
+    try:
+        user_id = create_user(
+            CreateUserRequest(
+                username=body.username,
+                password=body.password,
+            ),
+            repository,
+            PasswordHasher(),
+        )
+
+        db_session.commit()
+
+    except UsernameAlreadyExistsError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return CreateUserResponse(
+        id=user_id,
+        username=body.username.strip(),
+        role="volunteer",
+        is_active=True,
+    )

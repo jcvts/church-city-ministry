@@ -4213,3 +4213,195 @@ def test_update_family_rejects_invalid_payload(
 
     assert saved_family is not None
     assert saved_family.is_active is True
+
+
+def test_admin_can_create_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    response = client.post(
+        "/api/users",
+        json={
+            "username": "volunteer.maria",
+            "password": "SecurePassword123!",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+
+    response_data = response.json()
+    user_id = UUID(response_data["id"])
+
+    assert response_data["username"] == "volunteer.maria"
+    assert response_data["role"] == "volunteer"
+    assert response_data["is_active"] is True
+    assert "password" not in response_data
+    assert "password_hash" not in response_data
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.username == "volunteer.maria"
+    assert saved_user.role == "volunteer"
+    assert saved_user.is_active is True
+    assert PasswordHasher().verify(
+        "SecurePassword123!",
+        saved_user.password_hash,
+    )
+
+
+def test_create_user_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    response = client.post(
+        "/api/users",
+        json={
+            "username": "volunteer.maria",
+            "password": "SecurePassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+
+    saved_user = session.query(UserModel).filter_by(
+        username="volunteer.maria"
+    ).first()
+
+    assert saved_user is None
+
+
+def test_volunteer_cannot_create_user(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/users",
+        json={
+            "username": "volunteer.maria",
+            "password": "SecurePassword123!",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+    saved_user = session.query(UserModel).filter_by(
+        username="volunteer.maria"
+    ).first()
+
+    assert saved_user is None
+
+
+def test_create_user_rejects_duplicate_username(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    existing_user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=existing_user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        "/api/users",
+        json={
+            "username": "VOLUNTEER.MARIA",
+            "password": "AnotherSecurePassword123!",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Username already exists"
+
+    users = session.scalars(
+        select(UserModel).where(
+            func.lower(UserModel.username) == "volunteer.maria"
+        )
+    ).all()
+
+    assert len(users) == 1
+    assert users[0].id == existing_user_id
+
+
+@pytest.mark.parametrize(
+    "username,password,expected_detail",
+    [
+        (
+            "   ",
+            "SecurePassword123!",
+            "Username cannot be blank",
+        ),
+        (
+            "volunteer.maria",
+            "short",
+            "Password must contain at least 12 characters",
+        ),
+        (
+            "volunteer.maria",
+            " " * 12,
+            "Password cannot contain only whitespace",
+        ),
+    ],
+)
+def test_create_user_rejects_invalid_input(
+    api_client: tuple[TestClient, Session],
+    username: str,
+    password: str,
+    expected_detail: str,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    response = client.post(
+        "/api/users",
+        json={
+            "username": username,
+            "password": password,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == expected_detail
+
+    users = session.scalars(
+        select(UserModel).where(
+            UserModel.username == "volunteer.maria"
+        )
+    ).all()
+
+    assert users == []

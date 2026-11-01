@@ -196,3 +196,55 @@ def test_repository_preserves_admin_role(tmp_path) -> None:
             assert saved_user == user
     finally:
         engine.dispose()
+
+
+def test_create_user_persists_volunteer_with_hashed_password(
+    tmp_path,
+) -> None:
+    from church_city_kids.application.create_user import (
+        CreateUserRequest,
+        create_user,
+    )
+    from church_city_kids.infrastructure.security.passwords import (
+        PasswordHasher,
+    )
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'create_volunteer.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    password_hasher = PasswordHasher()
+
+    try:
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            user_id = create_user(
+                CreateUserRequest(
+                    username="volunteer.maria",
+                    password="SecurePassword123!",
+                ),
+                repository,
+                password_hasher,
+            )
+
+            session.commit()
+
+        # Open a new session to verify actual database persistence.
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            saved_user = repository.get_by_id(user_id)
+
+            assert saved_user is not None
+            assert saved_user.username == "volunteer.maria"
+            assert saved_user.role == "volunteer"
+            assert saved_user.is_active is True
+            assert saved_user.password_hash != "SecurePassword123!"
+            assert password_hasher.verify(
+                "SecurePassword123!",
+                saved_user.password_hash,
+            )
+    finally:
+        engine.dispose()

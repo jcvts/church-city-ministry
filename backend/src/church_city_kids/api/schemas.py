@@ -94,6 +94,11 @@ class UpdateUserStatusBody(BaseModel):
     is_active: bool
 
 
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UpdateUserStatusResponse(BaseModel):
     id: UUID
     username: str

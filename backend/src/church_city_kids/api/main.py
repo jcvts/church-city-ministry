@@ -13,6 +13,7 @@ from church_city_kids.api.dependencies import (
 from church_city_kids.api.schemas import (
     AddChildGuardianBody,
     AddChildGuardianResponse,
+    ChangePasswordBody,
     CheckInBody,
     CheckInResponse,
     CheckOutBody,
@@ -51,6 +52,13 @@ from church_city_kids.application.add_child_guardian import (
     ChildNotFoundError as AddGuardianChildNotFoundError,
 )
 from church_city_kids.application.authenticate_user import authenticate_user
+from church_city_kids.application.change_password import (
+    InvalidCurrentPasswordError,
+    change_password,
+)
+from church_city_kids.application.change_password import (
+    UserNotFoundError as ChangePasswordUserNotFoundError,
+)
 from church_city_kids.application.check_in import (
     CheckInRequest,
     ChildNotFoundError,
@@ -1175,3 +1183,47 @@ def update_user_status_endpoint(
         role=updated_user.role,
         is_active=updated_user.is_active,
     )
+
+
+@app.patch(
+    "/api/users/me/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def change_own_password_endpoint(
+    body: ChangePasswordBody,
+    db_session: Session = Depends(get_db_session),
+    authenticated_user: User = Depends(require_bearer_token),
+) -> None:
+    repository = SqlAlchemyUserRepository(db_session)
+    hasher = PasswordHasher()
+
+    try:
+        change_password(
+            user_id=authenticated_user.id,
+            current_password=body.current_password,
+            new_password=body.new_password,
+            repository=repository,
+            password_hasher=hasher,
+        )
+        db_session.commit()
+
+    except InvalidCurrentPasswordError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        ) from exc
+
+    except ChangePasswordUserNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        ) from exc
+
+    except ValueError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc

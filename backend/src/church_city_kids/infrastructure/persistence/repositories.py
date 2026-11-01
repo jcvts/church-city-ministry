@@ -872,6 +872,19 @@ class SqlAlchemyUserRepository:
 
         model.is_active = user.is_active
     
+    def update_password_hash(
+        self,
+        user_id: UUID,
+        password_hash: str,
+    ) -> None:
+        model = self._session.get(UserModel, user_id)
+
+        if model is None:
+            return
+
+        model.password_hash = password_hash
+        self._session.flush()
+
     @staticmethod
     def _to_domain(model: UserModel) -> User:
         role = model.role

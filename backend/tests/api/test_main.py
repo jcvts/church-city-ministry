@@ -4850,3 +4850,279 @@ def test_volunteer_cannot_list_users(
     )
 
     assert response.status_code == 403
+
+
+def test_change_own_password_requires_authentication(api_client) -> None:
+    client, _session = api_client
+
+    response = client.patch(
+        "/api/users/me/password",
+        json={
+            "current_password": "CurrentPassword123!",
+            "new_password": "NewSecurePassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("role", ["volunteer", "admin"])
+def test_change_own_password_updates_password_hash(
+    api_client,
+    role: str,
+) -> None:
+    client, session = api_client
+
+    current_password = "CurrentPassword123!"
+    new_password = "NewSecurePassword123!"
+
+    headers = create_authenticated_headers(session, role=role)
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    user_id = token_service.decode_access_token(
+        headers["Authorization"].removeprefix("Bearer ")
+    )
+
+    user = session.get(UserModel, user_id)
+    assert user is not None
+
+    hasher = PasswordHasher()
+    user.password_hash = hasher.hash(current_password)
+    session.commit()
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": current_password,
+            "new_password": new_password,
+        },
+    )
+
+    assert response.status_code == 204
+
+    session.refresh(user)
+
+    assert hasher.verify(new_password, user.password_hash)
+    assert not hasher.verify(current_password, user.password_hash)
+
+
+def test_change_own_password_rejects_wrong_current_password(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="volunteer")
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    user_id = token_service.decode_access_token(
+        headers["Authorization"].removeprefix("Bearer ")
+    )
+
+    user = session.get(UserModel, user_id)
+    assert user is not None
+
+    hasher = PasswordHasher()
+    user.password_hash = hasher.hash("CorrectPassword123!")
+    session.commit()
+
+    original_hash = user.password_hash
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "WrongPassword123!",
+            "new_password": "NewSecurePassword123!",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Current password is incorrect"
+
+    session.refresh(user)
+
+    assert user.password_hash == original_hash
+    assert hasher.verify("CorrectPassword123!", user.password_hash)
+
+
+def test_change_own_password_rejects_short_new_password(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="volunteer")
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    user_id = token_service.decode_access_token(
+        headers["Authorization"].removeprefix("Bearer ")
+    )
+
+    user = session.get(UserModel, user_id)
+    assert user is not None
+
+    hasher = PasswordHasher()
+    current_password = "CurrentPassword123!"
+    user.password_hash = hasher.hash(current_password)
+    session.commit()
+
+    original_hash = user.password_hash
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": current_password,
+            "new_password": "short",
+        },
+    )
+
+    assert response.status_code == 422
+
+    session.refresh(user)
+
+    assert user.password_hash == original_hash
+    assert hasher.verify(current_password, user.password_hash)
+
+
+def test_change_own_password_requires_new_password(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "CurrentPassword123!",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_change_own_password_rejects_whitespace_only_password(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="volunteer")
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    user_id = token_service.decode_access_token(
+        headers["Authorization"].removeprefix("Bearer ")
+    )
+
+    user = session.get(UserModel, user_id)
+    assert user is not None
+
+    hasher = PasswordHasher()
+    current_password = "CurrentPassword123!"
+    user.password_hash = hasher.hash(current_password)
+    session.commit()
+
+    original_hash = user.password_hash
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": current_password,
+            "new_password": "                ",
+        },
+    )
+
+    assert response.status_code == 422
+
+    session.refresh(user)
+
+    assert user.password_hash == original_hash
+    assert hasher.verify(current_password, user.password_hash)
+
+
+def test_change_own_password_requires_current_password(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "new_password": "NewSecurePassword123!",
+        },
+    )
+
+    assert response.status_code == 422
+
+    errors = response.json()["detail"]
+    assert any(
+        error["loc"] == ["body", "current_password"]
+        and error["type"] == "missing"
+        for error in errors
+    )
+
+
+def test_change_own_password_rejects_inactive_user(
+    api_client,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    token_service = JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
+    )
+    user_id = token_service.decode_access_token(
+        headers["Authorization"].removeprefix("Bearer ")
+    )
+
+    user = session.get(UserModel, user_id)
+    assert user is not None
+
+    hasher = PasswordHasher()
+    user.password_hash = hasher.hash("CurrentPassword123!")
+    user.is_active = False
+    session.commit()
+
+    original_hash = user.password_hash
+
+    response = client.patch(
+        "/api/users/me/password",
+        headers=headers,
+        json={
+            "current_password": "CurrentPassword123!",
+            "new_password": "NewSecurePassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+
+    session.refresh(user)
+    assert user.password_hash == original_hash

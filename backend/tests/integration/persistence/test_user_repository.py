@@ -450,3 +450,118 @@ def test_repository_lists_no_users_when_database_is_empty(
 
     finally:
         engine.dispose()
+
+
+def test_repository_updates_only_user_password_hash(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'user_password_update.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    user_id = uuid4()
+
+    try:
+        with Session(engine) as session:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    username="volunteer.maria",
+                    password_hash="old-hash",
+                    is_active=True,
+                    role="volunteer",
+                )
+            )
+            session.commit()
+
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            repository.update_password_hash(
+                user_id=user_id,
+                password_hash="new-hash",
+            )
+
+            session.commit()
+
+        # Verify persistence using a new database session.
+        with Session(engine) as session:
+            saved_user = session.get(UserModel, user_id)
+
+            assert saved_user is not None
+            assert saved_user.password_hash == "new-hash"
+
+            # Other fields must remain unchanged.
+            assert saved_user.username == "volunteer.maria"
+            assert saved_user.role == "volunteer"
+            assert saved_user.is_active is True
+
+    finally:
+        engine.dispose()
+
+
+def test_change_password_persists_new_argon2_hash(tmp_path) -> None:
+    from church_city_kids.application.change_password import change_password
+    from church_city_kids.infrastructure.security.passwords import (
+        PasswordHasher,
+    )
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'change_password_integration.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    hasher = PasswordHasher()
+    user_id = uuid4()
+
+    current_password = "CurrentPassword123!"
+    new_password = "NewSecurePassword123!"
+
+    try:
+        with Session(engine) as session:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    username="volunteer.maria",
+                    password_hash=hasher.hash(current_password),
+                    is_active=True,
+                    role="volunteer",
+                )
+            )
+            session.commit()
+
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            change_password(
+                user_id=user_id,
+                current_password=current_password,
+                new_password=new_password,
+                repository=repository,
+                password_hasher=hasher,
+            )
+
+            session.commit()
+
+        # Verify the persisted hash in a separate session.
+        with Session(engine) as session:
+            saved_user = session.get(UserModel, user_id)
+
+            assert saved_user is not None
+            assert saved_user.password_hash != new_password
+
+            assert hasher.verify(
+                new_password,
+                saved_user.password_hash,
+            )
+
+            assert not hasher.verify(
+                current_password,
+                saved_user.password_hash,
+            )
+
+            assert saved_user.username == "volunteer.maria"
+            assert saved_user.role == "volunteer"
+            assert saved_user.is_active is True
+
+    finally:
+        engine.dispose()

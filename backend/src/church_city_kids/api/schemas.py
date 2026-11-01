@@ -101,6 +101,13 @@ class UpdateUserStatusResponse(BaseModel):
     is_active: bool
 
 
+class ListUserResponse(BaseModel):
+    id: UUID
+    username: str
+    role: Literal["admin", "volunteer"]
+    is_active: bool
+
+
 class CheckInBody(BaseModel):
     child_id: UUID
     session_id: UUID

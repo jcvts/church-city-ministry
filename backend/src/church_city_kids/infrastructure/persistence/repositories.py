@@ -886,6 +886,18 @@ class SqlAlchemyUserRepository:
             is_active=model.is_active,
             role=cast(UserRole, role),
         )
+    
+    def list_all(self) -> list[User]:
+        statement = select(UserModel).order_by(
+            UserModel.username.asc()
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            self._to_domain(model)
+            for model in models
+        ]
 
 
 class SqlAlchemyUpdateChildGuardianRepository:

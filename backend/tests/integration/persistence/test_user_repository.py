@@ -364,3 +364,89 @@ def test_update_user_status_persists_deactivation_and_reactivation(
 
     finally:
         engine.dispose()
+
+
+def test_repository_lists_all_users_ordered_by_username(
+    tmp_path,
+) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'user_listing.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    try:
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    UserModel(
+                        id=uuid4(),
+                        username="volunteer.zoe",
+                        password_hash="hash-zoe",
+                        is_active=True,
+                        role="volunteer",
+                    ),
+                    UserModel(
+                        id=uuid4(),
+                        username="admin.jose",
+                        password_hash="hash-jose",
+                        is_active=True,
+                        role="admin",
+                    ),
+                    UserModel(
+                        id=uuid4(),
+                        username="volunteer.maria",
+                        password_hash="hash-maria",
+                        is_active=False,
+                        role="volunteer",
+                    ),
+                ]
+            )
+            session.commit()
+
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            users = repository.list_all()
+
+            assert [user.username for user in users] == [
+                "admin.jose",
+                "volunteer.maria",
+                "volunteer.zoe",
+            ]
+
+            assert [user.role for user in users] == [
+                "admin",
+                "volunteer",
+                "volunteer",
+            ]
+
+            assert [user.is_active for user in users] == [
+                True,
+                False,
+                True,
+            ]
+
+            assert all(isinstance(user, User) for user in users)
+
+    finally:
+        engine.dispose()
+
+
+def test_repository_lists_no_users_when_database_is_empty(
+    tmp_path,
+) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'empty_user_listing.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    try:
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            users = repository.list_all()
+
+            assert users == []
+
+    finally:
+        engine.dispose()

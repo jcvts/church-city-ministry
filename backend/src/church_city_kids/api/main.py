@@ -28,6 +28,7 @@ from church_city_kids.api.schemas import (
     CreateUserBody,
     CreateUserResponse,
     GuardianDetailResponse,
+    ListUserResponse,
     LoginBody,
     LoginResponse,
     RegisterChildBody,
@@ -97,6 +98,7 @@ from church_city_kids.application.list_rooms import list_rooms
 from church_city_kids.application.list_service_attendances import (
     list_service_attendances,
 )
+from church_city_kids.application.list_users import list_users
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -1066,6 +1068,30 @@ def update_guardian_endpoint(
         raise
 
     return {"status": "updated"}
+
+
+@app.get(
+    "/api/users",
+    response_model=list[ListUserResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_users_endpoint(
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
+) -> list[ListUserResponse]:
+    repository = SqlAlchemyUserRepository(db_session)
+
+    users = list_users(repository=repository)
+
+    return [
+        ListUserResponse(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            is_active=user.is_active,
+        )
+        for user in users
+    ]
 
 
 @app.post(

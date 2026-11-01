@@ -4769,3 +4769,84 @@ def test_deactivated_volunteer_cannot_login(
 
     assert saved_user is not None
     assert saved_user.is_active is False
+
+
+def test_admin_can_list_users(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    volunteer_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=volunteer_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=False,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.get(
+        "/api/users",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    users = response.json()
+
+    assert isinstance(users, list)
+
+    volunteer = next(
+        user
+        for user in users
+        if user["id"] == str(volunteer_id)
+    )
+
+    assert volunteer["username"] == "volunteer.maria"
+    assert volunteer["role"] == "volunteer"
+    assert volunteer["is_active"] is False
+
+    assert any(user["role"] == "admin" for user in users)
+
+    assert all(
+        "password_hash" not in user
+        and "password" not in user
+        for user in users
+    )
+
+
+def test_list_users_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _session = api_client
+
+    response = client.get("/api/users")
+
+    assert response.status_code == 401
+
+
+def test_volunteer_cannot_list_users(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/users",
+        headers=headers,
+    )
+
+    assert response.status_code == 403

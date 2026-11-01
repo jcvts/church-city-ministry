@@ -248,3 +248,119 @@ def test_create_user_persists_volunteer_with_hashed_password(
             )
     finally:
         engine.dispose()
+
+
+def test_repository_updates_user_active_status(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'user_status_update.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    user_id = uuid4()
+
+    try:
+        with Session(engine) as session:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    username="volunteer.maria",
+                    password_hash="existing-hash",
+                    is_active=True,
+                    role="volunteer",
+                )
+            )
+            session.commit()
+
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            user = repository.get_by_id(user_id)
+            assert user is not None
+
+            user.is_active = False
+            repository.update(user)
+
+            session.commit()
+
+        # Verify persistence using a new database session.
+        with Session(engine) as session:
+            saved_user = session.get(UserModel, user_id)
+
+            assert saved_user is not None
+            assert saved_user.is_active is False
+            assert saved_user.username == "volunteer.maria"
+            assert saved_user.password_hash == "existing-hash"
+            assert saved_user.role == "volunteer"
+
+    finally:
+        engine.dispose()
+
+
+def test_update_user_status_persists_deactivation_and_reactivation(
+    tmp_path,
+) -> None:
+    from church_city_kids.application.update_user_status import (
+        update_user_status,
+    )
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'user_status_lifecycle.db'}"
+    )
+    Base.metadata.create_all(engine)
+
+    user_id = uuid4()
+
+    try:
+        with Session(engine) as session:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    username="volunteer.maria",
+                    password_hash="existing-hash",
+                    is_active=True,
+                    role="volunteer",
+                )
+            )
+            session.commit()
+
+        # Deactivate the user.
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            update_user_status(
+                user_id=user_id,
+                is_active=False,
+                repository=repository,
+            )
+
+            session.commit()
+
+        # Verify deactivation and reactivate the user.
+        with Session(engine) as session:
+            repository = SqlAlchemyUserRepository(session)
+
+            user = repository.get_by_id(user_id)
+
+            assert user is not None
+            assert user.is_active is False
+
+            update_user_status(
+                user_id=user_id,
+                is_active=True,
+                repository=repository,
+            )
+
+            session.commit()
+
+        # Verify the final persisted state.
+        with Session(engine) as session:
+            saved_user = session.get(UserModel, user_id)
+
+            assert saved_user is not None
+            assert saved_user.is_active is True
+            assert saved_user.username == "volunteer.maria"
+            assert saved_user.password_hash == "existing-hash"
+            assert saved_user.role == "volunteer"
+
+    finally:
+        engine.dispose()

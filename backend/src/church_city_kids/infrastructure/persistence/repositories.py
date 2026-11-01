@@ -864,6 +864,14 @@ class SqlAlchemyUserRepository:
             )
         )
     
+    def update(self, user: User) -> None:
+        model = self._session.get(UserModel, user.id)
+
+        if model is None:
+            raise ValueError("User not found")
+
+        model.is_active = user.is_active
+    
     @staticmethod
     def _to_domain(model: UserModel) -> User:
         role = model.role

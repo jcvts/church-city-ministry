@@ -38,6 +38,8 @@ from church_city_kids.api.schemas import (
     UpdateFamilyBody,
     UpdateGuardianBody,
     UpdateMinistrySettingsBody,
+    UpdateUserStatusBody,
+    UpdateUserStatusResponse,
 )
 from church_city_kids.application.add_child_guardian import (
     AddChildGuardianRequest,
@@ -131,6 +133,10 @@ from church_city_kids.application.update_guardian import (
 from church_city_kids.application.update_guardian import (
     UpdateGuardianRequest,
     update_guardian,
+)
+from church_city_kids.application.update_user_status import (
+    UserNotFoundError,
+    update_user_status,
 )
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
@@ -1105,4 +1111,41 @@ def create_user_endpoint(
         username=body.username.strip(),
         role="volunteer",
         is_active=True,
+    )
+
+
+@app.patch(
+    "/api/users/{user_id}/status",
+    response_model=UpdateUserStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_user_status_endpoint(
+    user_id: UUID,
+    body: UpdateUserStatusBody,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
+) -> UpdateUserStatusResponse:
+    repository = SqlAlchemyUserRepository(db_session)
+
+    try:
+        updated_user = update_user_status(
+            user_id=user_id,
+            is_active=body.is_active,
+            repository=repository,
+        )
+
+        db_session.commit()
+
+    except UserNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        ) from exc
+
+    return UpdateUserStatusResponse(
+        id=updated_user.id,
+        username=updated_user.username,
+        role=updated_user.role,
+        is_active=updated_user.is_active,
     )

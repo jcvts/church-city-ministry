@@ -4405,3 +4405,367 @@ def test_create_user_rejects_invalid_input(
     ).all()
 
     assert users == []
+
+
+def test_admin_can_deactivate_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    response_data = response.json()
+
+    assert response_data["id"] == str(user_id)
+    assert response_data["is_active"] is False
+    assert response_data["username"] == "volunteer.maria"
+    assert response_data["role"] == "volunteer"
+    assert "password_hash" not in response_data
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is False
+    assert saved_user.username == "volunteer.maria"
+    assert saved_user.role == "volunteer"
+
+
+def test_admin_can_reactivate_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=False,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={"is_active": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    response_data = response.json()
+
+    assert response_data["id"] == str(user_id)
+    assert response_data["username"] == "volunteer.maria"
+    assert response_data["role"] == "volunteer"
+    assert response_data["is_active"] is True
+    assert "password_hash" not in response_data
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is True
+    assert saved_user.username == "volunteer.maria"
+    assert saved_user.password_hash == "existing-hash"
+    assert saved_user.role == "volunteer"
+
+
+def test_update_user_status_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 401
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is True
+
+
+def test_volunteer_cannot_update_user_status(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is True
+
+
+def test_update_user_status_returns_404_when_user_not_found(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    nonexistent_user_id = uuid4()
+
+    response = client.patch(
+        f"/api/users/{nonexistent_user_id}/status",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+    assert session.get(UserModel, nonexistent_user_id) is None
+
+
+def test_update_user_status_requires_is_active_field(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is True
+
+
+def test_update_user_status_rejects_invalid_is_active(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash="existing-hash",
+            is_active=True,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.patch(
+        f"/api/users/{user_id}/status",
+        json={"is_active": "invalid"},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is True
+
+
+def test_deactivated_volunteer_cannot_use_existing_token(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    volunteer_headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    admin_headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    # Confirm that the volunteer's token initially works.
+    response = client.get(
+        "/api/families",
+        params={"name": "Test"},
+        headers=volunteer_headers,
+    )
+
+    assert response.status_code == 200, response.json()
+
+    # Locate the volunteer associated with the token.
+    volunteer = session.execute(
+        select(UserModel).where(
+            UserModel.role == "volunteer",
+        )
+    ).scalar_one()
+
+    # Deactivate the volunteer using the administrative endpoint.
+    response = client.patch(
+        f"/api/users/{volunteer.id}/status",
+        json={"is_active": False},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+
+    # The previously issued token must no longer grant access.
+    response = client.get(
+        "/api/families",
+        headers=volunteer_headers,
+    )
+
+    assert response.status_code == 401
+
+
+def test_deactivated_volunteer_cannot_login(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    from church_city_kids.infrastructure.security.passwords import (
+        PasswordHasher,
+    )
+
+    password = "SecurePassword123!"
+    user_id = uuid4()
+
+    session.add(
+        UserModel(
+            id=user_id,
+            username="volunteer.maria",
+            password_hash=PasswordHasher().hash(password),
+            is_active=False,
+            role="volunteer",
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "username": "volunteer.maria",
+            "password": password,
+        },
+    )
+
+    assert response.status_code == 401
+    assert "access_token" not in response.json()
+
+    session.expire_all()
+
+    saved_user = session.get(UserModel, user_id)
+
+    assert saved_user is not None
+    assert saved_user.is_active is False

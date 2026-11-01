@@ -33,6 +33,7 @@ from church_city_kids.api.schemas import (
     RoomResponse,
     UpdateChildBody,
     UpdateChildGuardianBody,
+    UpdateGuardianBody,
     UpdateMinistrySettingsBody,
 )
 from church_city_kids.application.add_child_guardian import (
@@ -109,6 +110,13 @@ from church_city_kids.application.update_child_guardian import (
     UpdateChildGuardianRequest,
     update_child_guardian,
 )
+from church_city_kids.application.update_guardian import (
+    GuardianNotFoundError as UpdateGuardianNotFoundError,
+)
+from church_city_kids.application.update_guardian import (
+    UpdateGuardianRequest,
+    update_guardian,
+)
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
     CheckOutBeforeCheckInError,
@@ -147,6 +155,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUpdateChildRepository,
+    SqlAlchemyUpdateGuardianRepository,
     SqlAlchemyUserRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
@@ -968,6 +977,35 @@ def update_child_endpoint(
             detail="Child not found",
         ) from exc
 
+    except Exception:
+        session.rollback()
+        raise
+
+    return {"status": "updated"}
+
+
+@app.patch("/api/guardians/{guardian_id}", status_code=status.HTTP_200_OK)
+def update_guardian_endpoint(
+    guardian_id: UUID,
+    body: UpdateGuardianBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> dict[str, str]:
+    repository = SqlAlchemyUpdateGuardianRepository(session)
+    updates = body.model_dump(exclude_unset=True)
+
+    try:
+        update_guardian(
+            UpdateGuardianRequest(guardian_id=guardian_id, **updates),
+            repository,
+        )
+        session.commit()
+    except UpdateGuardianNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail="Guardian not found",
+        ) from exc
     except Exception:
         session.rollback()
         raise

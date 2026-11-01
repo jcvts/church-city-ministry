@@ -15,6 +15,7 @@ from church_city_kids.api.dependencies import (
     get_jwt_token_service,
 )
 from church_city_kids.api.main import app
+from church_city_kids.domain.people import Family, Guardian
 from church_city_kids.infrastructure.persistence.database import (
     create_sqlite_engine,
 )
@@ -30,6 +31,10 @@ from church_city_kids.infrastructure.persistence.models import (
     ServiceModel,
     SessionModel,
     UserModel,
+)
+from church_city_kids.infrastructure.persistence.repositories import (
+    FamilyRepository,
+    GuardianRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import (
     JwtTokenService,
@@ -3875,3 +3880,175 @@ def test_update_child_birth_date_via_api(
     assert saved_child.full_name == "Maria Silva"
     assert saved_child.family_id == family_id
     assert saved_child.is_active is True
+
+
+def test_update_guardian_changes_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    FamilyRepository(session).add(family)
+    session.flush()
+    GuardianRepository(session).add(guardian)
+    session.commit()
+
+    headers = create_authenticated_headers(session)
+
+    response = client.patch(
+        f"/api/guardians/{guardian.id}",
+        json={"full_name": "Ana Oliveira"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    session.expire_all()
+    saved_guardian = GuardianRepository(session).get(guardian.id)
+
+    assert saved_guardian is not None
+    assert saved_guardian.full_name == "Ana Oliveira"
+    assert saved_guardian.phone == "82999999999"
+    assert saved_guardian.family_id == family.id
+    assert saved_guardian.is_active is True
+
+
+def test_update_guardian_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    FamilyRepository(session).add(family)
+    session.flush()
+    GuardianRepository(session).add(guardian)
+    session.commit()
+
+    response = client.patch(
+        f"/api/guardians/{guardian.id}",
+        json={"full_name": "Ana Oliveira"},
+    )
+
+    assert response.status_code == 401
+
+    session.expire_all()
+    saved_guardian = GuardianRepository(session).get(guardian.id)
+
+    assert saved_guardian is not None
+    assert saved_guardian.full_name == "Ana Silva"
+
+
+def test_update_guardian_returns_404_when_guardian_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session)
+    nonexistent_guardian_id = uuid4()
+
+    response = client.patch(
+        f"/api/guardians/{nonexistent_guardian_id}",
+        json={"full_name": "Ana Oliveira"},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Guardian not found"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"full_name": ""},
+        {"full_name": "   "},
+        {"full_name": None},
+        {"full_name": 123},
+        {"phone": 123},
+    ],
+)
+def test_update_guardian_rejects_invalid_payload(
+    api_client: tuple[TestClient, Session],
+    payload: dict[str, object],
+) -> None:
+    client, session = api_client
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    FamilyRepository(session).add(family)
+    session.flush()
+    GuardianRepository(session).add(guardian)
+    session.commit()
+
+    headers = create_authenticated_headers(session)
+
+    response = client.patch(
+        f"/api/guardians/{guardian.id}",
+        json=payload,
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+    saved_guardian = GuardianRepository(session).get(guardian.id)
+
+    assert saved_guardian is not None
+    assert saved_guardian.full_name == "Ana Silva"
+    assert saved_guardian.phone == "82999999999"
+
+
+def test_update_guardian_can_remove_phone(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    FamilyRepository(session).add(family)
+    session.flush()
+    GuardianRepository(session).add(guardian)
+    session.commit()
+
+    headers = create_authenticated_headers(session)
+
+    response = client.patch(
+        f"/api/guardians/{guardian.id}",
+        json={"phone": None},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    session.expire_all()
+    saved_guardian = GuardianRepository(session).get(guardian.id)
+
+    assert saved_guardian is not None
+    assert saved_guardian.phone is None
+    assert saved_guardian.full_name == "Ana Silva"
+    assert saved_guardian.family_id == family.id
+    assert saved_guardian.is_active is True

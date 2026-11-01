@@ -45,6 +45,10 @@ from church_city_kids.application.update_child_guardian import (
     UpdateChildGuardianRequest,
     update_child_guardian,
 )
+from church_city_kids.application.update_guardian import (
+    UpdateGuardianRequest,
+    update_guardian,
+)
 from church_city_kids.domain.errors import (
     ChildAlreadyCheckedInError,
     DuplicateChildGuardianError,
@@ -92,6 +96,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUpdateChildRepository,
+    SqlAlchemyUpdateGuardianRepository,
 )
 
 
@@ -2549,3 +2554,90 @@ def test_update_child_repository_persists_changes(
         assert saved_child.birth_date == date(2021, 5, 10)
         assert saved_child.family_id == family.id
         assert saved_child.is_active is True
+
+
+def test_update_guardian_repository_persists_changes(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    # Create the original records.
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+
+        GuardianRepository(session).add(guardian)
+        session.commit()
+
+    # Update through the application use case.
+    with Session(engine) as session:
+        repository = SqlAlchemyUpdateGuardianRepository(session)
+
+        update_guardian(
+            UpdateGuardianRequest(
+                guardian_id=guardian.id,
+                full_name="Ana Oliveira",
+                phone="82988888888",
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    # Verify persistence using a new database session.
+    with Session(engine) as session:
+        saved_guardian = GuardianRepository(session).get(guardian.id)
+
+        assert saved_guardian is not None
+        assert saved_guardian.full_name == "Ana Oliveira"
+        assert saved_guardian.phone == "82988888888"
+        assert saved_guardian.family_id == family.id
+        assert saved_guardian.is_active is True
+
+
+def test_update_guardian_repository_can_remove_phone(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "test.db")
+    Base.metadata.create_all(engine)
+
+    family = Family()
+    guardian = Guardian(
+        family_id=family.id,
+        full_name="Ana Silva",
+        phone="82999999999",
+    )
+
+    with Session(engine) as session:
+        FamilyRepository(session).add(family)
+        session.flush()
+        GuardianRepository(session).add(guardian)
+        session.commit()
+
+    with Session(engine) as session:
+        update_guardian(
+            UpdateGuardianRequest(
+                guardian_id=guardian.id,
+                phone=None,
+            ),
+            SqlAlchemyUpdateGuardianRepository(session),
+        )
+        session.commit()
+
+    # Verify the change using a new database session.
+    with Session(engine) as session:
+        saved_guardian = GuardianRepository(session).get(guardian.id)
+
+        assert saved_guardian is not None
+        assert saved_guardian.phone is None
+        assert saved_guardian.full_name == "Ana Silva"
+        assert saved_guardian.family_id == family.id
+        assert saved_guardian.is_active is True

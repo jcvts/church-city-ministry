@@ -296,6 +296,23 @@ class GuardianRepository:
         )
 
 
+class SqlAlchemyUpdateGuardianRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_guardian(self, guardian_id: UUID) -> Guardian | None:
+        return GuardianRepository(self._session).get(guardian_id)
+
+    def save_guardian(self, guardian: Guardian) -> None:
+        model = self._session.get(GuardianModel, guardian.id)
+
+        if model is None:
+            raise ValueError("Guardian not found during update")
+
+        model.full_name = guardian.full_name
+        model.phone = guardian.phone
+
+
 class SqlAlchemyListGuardiansRepository(ListGuardiansRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session

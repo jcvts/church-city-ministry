@@ -6,10 +6,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import Session, sessionmaker
 
-DEFAULT_DATABASE_PATH = Path("church_city_kids.db")
 
-
-def create_sqlite_engine(database_path: Path = DEFAULT_DATABASE_PATH) -> Engine:
+def create_sqlite_engine(database_path: Path) -> Engine:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
     database_url = f"sqlite:///{database_path}"
     engine = create_engine(database_url)
 

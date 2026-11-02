@@ -1,4 +1,3 @@
-
 import argparse
 import sqlite3
 from datetime import datetime
@@ -6,6 +5,9 @@ from pathlib import Path
 
 from church_city_kids.infrastructure.persistence.database_backup import (
     run_scheduled_backup,
+)
+from church_city_kids.infrastructure.persistence.database_config import (
+    get_database_path,
 )
 
 
@@ -17,8 +19,8 @@ def main() -> None:
     parser.add_argument(
         "--database",
         type=Path,
-        required=True,
-        help="Absolute path to the SQLite database.",
+        default=None,
+        help="Absolute path to the SQLite database (default: configured path).",
     )
 
     parser.add_argument(
@@ -38,7 +40,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if not args.database.is_absolute():
+    database_path = args.database
+
+    if database_path is None:
+        try:
+            database_path = get_database_path()
+        except ValueError as exc:
+            parser.error(str(exc))
+
+    if not database_path.is_absolute():
         parser.error("--database must be an absolute path")
 
     if not args.backup_dir.is_absolute():
@@ -49,7 +59,7 @@ def main() -> None:
     
     try:
         backup_path = run_scheduled_backup(
-            source_path=args.database,
+            source_path=database_path,
             backup_directory=args.backup_dir,
             timestamp=datetime.now(),
             keep_count=args.keep_count,

@@ -1,6 +1,5 @@
 from collections.abc import Generator
 from datetime import timedelta
-from pathlib import Path
 from typing import Annotated
 
 import jwt
@@ -12,6 +11,9 @@ from church_city_kids.domain.user import User
 from church_city_kids.infrastructure.persistence.database import (
     create_sqlite_engine,
 )
+from church_city_kids.infrastructure.persistence.database_config import (
+    get_database_path,
+)
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyUserRepository,
 )
@@ -22,7 +24,7 @@ from church_city_kids.infrastructure.security.jwt_tokens import (
     JwtTokenService,
 )
 
-engine = create_sqlite_engine(Path("church_city_kids.db"))
+engine = create_sqlite_engine(get_database_path())
 bearer_scheme = HTTPBearer(auto_error=True)
 
 

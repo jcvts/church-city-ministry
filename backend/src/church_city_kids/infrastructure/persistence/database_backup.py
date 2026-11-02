@@ -112,6 +112,7 @@ def create_timestamped_backup(
 def prune_old_backups(
     backup_directory: Path,
     keep_count: int = 30,
+    database_stem: str = "church_city_kids",
 ) -> None:
     if keep_count < 1:
         raise ValueError("keep_count must be at least 1")
@@ -120,7 +121,7 @@ def prune_old_backups(
         return
 
     pattern = re.compile(
-        r"church_city_kids_(\d{8}_\d{6})\.db"
+        rf"{re.escape(database_stem)}_(\d{{8}}_\d{{6}})\.db"
     )
 
     backups = []
@@ -187,6 +188,7 @@ def run_scheduled_backup(
     prune_old_backups(
         backup_directory,
         keep_count=keep_count,
+        database_stem=source_path.stem,
     )
 
     return backup_path

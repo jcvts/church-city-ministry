@@ -30,3 +30,22 @@ def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
         ).scalar_one()
 
     assert enabled == 1
+
+
+def test_create_sqlite_engine_creates_missing_parent_directory(
+    tmp_path: Path,
+) -> None:
+    database_path = (
+        tmp_path / "ChurchCityKids" / "data" / "church_city_kids.db"
+    )
+
+    engine = create_sqlite_engine(database_path)
+
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+
+        assert database_path.parent.is_dir()
+        assert database_path.is_file()
+    finally:
+        engine.dispose()

@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
@@ -164,6 +166,12 @@ from church_city_kids.domain.errors import (
     SessionNotOpenError,
 )
 from church_city_kids.domain.user import User
+from church_city_kids.infrastructure.persistence.automatic_backup import (
+    AutomaticBackupManager,
+)
+from church_city_kids.infrastructure.persistence.database_config import (
+    get_database_path,
+)
 from church_city_kids.infrastructure.persistence.models import ServiceModel
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyAddChildGuardianRepository,
@@ -193,9 +201,30 @@ from church_city_kids.infrastructure.persistence.repositories import (
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
 from church_city_kids.infrastructure.security.passwords import PasswordHasher
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    backup_manager = getattr(app.state, "backup_manager", None)
+
+    if backup_manager is None:
+        database_path = get_database_path()
+
+        backup_manager = AutomaticBackupManager(
+            database_path=database_path,
+            backup_directory=database_path.parent / "backups",
+        )
+
+    backup_manager.start()
+
+    try:
+        yield
+    finally:
+        backup_manager.stop()
+
 app = FastAPI(
     title="Church City Kids API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 

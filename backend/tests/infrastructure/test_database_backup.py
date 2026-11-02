@@ -1,9 +1,13 @@
 import sqlite3
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 from church_city_kids.infrastructure.persistence.database_backup import (
     backup_sqlite_database,
+    create_timestamped_backup,
+    prune_old_backups,
 )
 
 
@@ -271,6 +275,37 @@ def test_create_timestamped_backup_uses_datetime_in_filename(
     assert records == [("Maria",)]
 
 
+def test_timestamped_backup_preserves_existing_file_on_collision(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "church_city_kids.db"
+    backup_directory = tmp_path / "backups"
+    timestamp = datetime(2026, 11, 2, 12, 0, 0)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE children (id INTEGER PRIMARY KEY)"
+        )
+
+    first_backup = create_timestamped_backup(
+        source_path=database_path,
+        backup_directory=backup_directory,
+        timestamp=timestamp,
+    )
+
+    original_contents = first_backup.read_bytes()
+
+    second_backup = create_timestamped_backup(
+        source_path=database_path,
+        backup_directory=backup_directory,
+        timestamp=timestamp,
+    )
+
+    assert first_backup != second_backup
+    assert first_backup.read_bytes() == original_contents
+    assert second_backup.exists()
+
+
 def test_prune_old_backups_keeps_most_recent_files(tmp_path) -> None:
     from church_city_kids.infrastructure.persistence.database_backup import (
         prune_old_backups,
@@ -502,3 +537,60 @@ def test_scheduled_backup_failure_preserves_existing_backups(
 
     assert all(path.exists() for path in existing_backups)
     assert len(list(backup_directory.glob("*.db"))) == 2
+
+
+def test_timestamped_backup_uses_unique_name_on_collision(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "church_city_kids.db"
+    backup_directory = tmp_path / "backups"
+    timestamp = datetime(2026, 11, 2, 12, 0, 0)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE children (id INTEGER PRIMARY KEY)"
+        )
+
+    first_backup = create_timestamped_backup(
+        source_path=database_path,
+        backup_directory=backup_directory,
+        timestamp=timestamp,
+    )
+
+    second_backup = create_timestamped_backup(
+        source_path=database_path,
+        backup_directory=backup_directory,
+        timestamp=timestamp,
+    )
+
+    assert first_backup != second_backup
+    assert first_backup.exists()
+    assert second_backup.exists()
+
+    assert len(list(backup_directory.glob("*.db"))) == 2
+
+
+def test_prune_old_backups_includes_collision_suffixes(
+    tmp_path: Path,
+) -> None:
+    backup_directory = tmp_path / "backups"
+    backup_directory.mkdir()
+
+    oldest = backup_directory / "church_city_kids_20261102_100000.db"
+    middle = backup_directory / "church_city_kids_20261102_110000.db"
+    newest = backup_directory / "church_city_kids_20261102_120000_1.db"
+
+    for backup_path in (oldest, middle, newest):
+        with sqlite3.connect(backup_path) as connection:
+            connection.execute(
+                "CREATE TABLE children (id INTEGER PRIMARY KEY)"
+            )
+
+    prune_old_backups(
+        backup_directory=backup_directory,
+        keep_count=2,
+    )
+
+    assert not oldest.exists()
+    assert middle.exists()
+    assert newest.exists()

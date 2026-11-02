@@ -97,21 +97,34 @@ def create_timestamped_backup(
     backup_directory: Path,
     timestamp: datetime,
 ) -> Path:
-    filename = (
+    base_name = (
         f"{source_path.stem}_"
-        f"{timestamp.strftime('%Y%m%d_%H%M%S')}.db"
+        f"{timestamp.strftime('%Y%m%d_%H%M%S')}"
     )
 
-    backup_path = backup_directory / filename
+    suffix = 0
 
-    backup_sqlite_database(source_path, backup_path)
+    while True:
+        filename = (
+            f"{base_name}.db"
+            if suffix == 0
+            else f"{base_name}_{suffix}.db"
+        )
 
-    return backup_path
+        backup_path = backup_directory / filename
+
+        try:
+            backup_sqlite_database(source_path, backup_path)
+        except FileExistsError:
+            suffix += 1
+            continue
+
+        return backup_path
 
 
 def prune_old_backups(
     backup_directory: Path,
-    keep_count: int = 30,
+    keep_count: int = 100,
     database_stem: str = "church_city_kids",
 ) -> None:
     if keep_count < 1:
@@ -121,7 +134,7 @@ def prune_old_backups(
         return
 
     pattern = re.compile(
-        rf"{re.escape(database_stem)}_(\d{{8}}_\d{{6}})\.db"
+        rf"{re.escape(database_stem)}_(\d{{8}}_\d{{6}})(?:_\d+)?\.db"
     )
 
     backups = []
@@ -174,7 +187,7 @@ def run_scheduled_backup(
     source_path: Path,
     backup_directory: Path,
     timestamp: datetime,
-    keep_count: int = 30,
+    keep_count: int = 1000,
 ) -> Path:
     if keep_count < 1:
         raise ValueError("keep_count must be at least 1")

@@ -9,6 +9,8 @@ from church_city_kids.domain.scheduling import Room
 @dataclass(frozen=True)
 class CreateRoomRequest:
     name: str
+    min_age_years: int | None = None
+    max_age_years: int | None = None
 
 
 @dataclass(frozen=True)
@@ -29,7 +31,11 @@ def create_room(
     if repository.room_name_exists(request.name):
         raise RoomNameAlreadyExistsError()
 
-    room = Room(name=request.name)
+    room = Room(
+        name=request.name,
+        min_age_years=request.min_age_years,
+        max_age_years=request.max_age_years,
+    )
 
     repository.add_room(room)
 

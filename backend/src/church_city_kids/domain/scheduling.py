@@ -39,6 +39,20 @@ class Room:
     name: str
     id: UUID = field(default_factory=uuid4)
     is_active: bool = True
+    min_age_years: int | None = None
+    max_age_years: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.min_age_years is None and self.max_age_years is None:
+            return
+
+        if (
+            self.min_age_years is None
+            or self.max_age_years is None
+            or self.min_age_years < 0
+            or self.max_age_years < self.min_age_years
+        ):
+            raise InvalidAgeRangeError()
 
     def deactivate(self) -> None:
         self.is_active = False

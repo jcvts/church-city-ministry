@@ -29,6 +29,7 @@ from church_city_kids.application.list_service_attendances import (
     ServiceAttendanceItem,
 )
 from church_city_kids.application.registration import RegistrationRepository
+from church_city_kids.application.update_room import UpdateRoomRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
     Child,
@@ -103,6 +104,51 @@ class SqlAlchemyUpdateChildRepository:
 
         model.full_name = child.full_name
         model.birth_date = child.birth_date
+
+
+
+class SqlAlchemyUpdateRoomRepository(UpdateRoomRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_room(self, room_id: UUID) -> Room | None:
+        model = self._session.get(RoomModel, room_id)
+
+        if model is None:
+            return None
+
+        return Room(
+            id=model.id,
+            name=model.name,
+            is_active=model.is_active,
+            min_age_years=model.min_age_years,
+            max_age_years=model.max_age_years,
+        )
+
+    def room_name_exists(
+        self,
+        name: str,
+        exclude_room_id: UUID,
+    ) -> bool:
+        normalized_name = normalize_room_name(name)
+
+        statement = select(RoomModel.id).where(
+            RoomModel.normalized_name == normalized_name,
+            RoomModel.id != exclude_room_id,
+        )
+
+        return self._session.scalar(statement) is not None
+
+    def save_room(self, room: Room) -> None:
+        model = self._session.get(RoomModel, room.id)
+
+        if model is None:
+            raise ValueError("Room not found during update")
+
+        model.name = room.name
+        model.normalized_name = normalize_room_name(room.name)
+        model.min_age_years = room.min_age_years
+        model.max_age_years = room.max_age_years
 
 
 class SqlAlchemyListChildrenRepository(ListChildrenRepository):
@@ -677,6 +723,26 @@ class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
     def __init__(self, session: DbSession) -> None:
         self._session = session
 
+    def get_active_rooms(self) -> list[Room]:
+        statement = (
+            select(RoomModel)
+            .where(RoomModel.is_active.is_(True))
+            .order_by(RoomModel.name)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            Room(
+                id=model.id,
+                name=model.name,
+                is_active=model.is_active,
+                min_age_years=model.min_age_years,
+                max_age_years=model.max_age_years,
+            )
+            for model in models
+        ]
+
     def add_service(self, service: Service) -> None:
         self._session.add(
             ServiceModel(
@@ -684,6 +750,19 @@ class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
                 name=service.name,
                 starts_at=service.starts_at,
                 ends_at=service.ends_at,
+            )
+        )
+
+    def add_session(self, session: DomainSession) -> None:
+        self._session.add(
+            SessionModel(
+                id=session.id,
+                service_id=session.service_id,
+                room_id=session.room_id,
+                name=session.name,
+                min_age_years=session.min_age_years,
+                max_age_years=session.max_age_years,
+                status=session.status.value,
             )
         )
 
@@ -710,6 +789,8 @@ class SqlAlchemyCreateRoomRepository(CreateRoomRepository):
                 name=room.name,
                 normalized_name=normalize_room_name(room.name),
                 is_active=room.is_active,
+                min_age_years=room.min_age_years,
+                max_age_years=room.max_age_years,
             )
         )
 
@@ -732,6 +813,8 @@ class SqlAlchemyListRoomsRepository(ListRoomsRepository):
                 id=model.id,
                 name=model.name,
                 is_active=model.is_active,
+                min_age_years=model.min_age_years,
+                max_age_years=model.max_age_years,
             )
             for model in models
         ]
@@ -764,6 +847,8 @@ class SqlAlchemyCreateSessionRepository:
             id=model.id,
             name=model.name,
             is_active=model.is_active,
+            min_age_years=model.min_age_years,
+            max_age_years=model.max_age_years,
         )
 
     def get_sessions_for_service(

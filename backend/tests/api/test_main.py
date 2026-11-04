@@ -209,8 +209,7 @@ def test_register_child(
     client, verification_session = api_client
 
     verification_session.add(
-        MinistrySettingsModel(
-            id=1,
+    MinistrySettingsModel(
             pager_required=True,
         )
     )
@@ -343,7 +342,8 @@ def test_list_children_returns_empty_list_when_no_matches(
     assert response.json() == []
 
 
-def test_create_service(
+
+def test_create_service_creates_sessions_for_active_rooms(
     api_client: tuple[TestClient, Session],
 ) -> None:
     client, verification_session = api_client
@@ -352,13 +352,47 @@ def test_create_service(
         role="admin",
     )
 
+    nursery_id = uuid4()
+    children_id = uuid4()
+    inactive_id = uuid4()
+
+    verification_session.add_all(
+        [
+            RoomModel(
+                id=nursery_id,
+                name="Sala 1",
+                normalized_name="sala 1",
+                is_active=True,
+                min_age_years=3,
+                max_age_years=5,
+            ),
+            RoomModel(
+                id=children_id,
+                name="Sala 2",
+                normalized_name="sala 2",
+                is_active=True,
+                min_age_years=6,
+                max_age_years=11,
+            ),
+            RoomModel(
+                id=inactive_id,
+                name="Sala desativada",
+                normalized_name="sala desativada",
+                is_active=False,
+                min_age_years=12,
+                max_age_years=14,
+            ),
+        ]
+    )
+    verification_session.commit()
+
     response = client.post(
         "/api/services",
         headers=headers,
         json={
-            "name": "Sunday Service",
-            "starts_at": "2026-10-04T19:00:00",
-            "ends_at": "2026-10-04T21:00:00",
+            "name": "Culto 22/11/2026",
+            "starts_at": "2026-11-22T09:00:00",
+            "ends_at": "2026-11-22T11:00:00",
         },
     )
 
@@ -368,9 +402,33 @@ def test_create_service(
     service = verification_session.get(ServiceModel, service_id)
 
     assert service is not None
-    assert service.name == "Sunday Service"
-    assert service.starts_at == datetime(2026, 10, 4, 19, 0)
-    assert service.ends_at == datetime(2026, 10, 4, 21, 0)
+    assert service.name == "Culto 22/11/2026"
+
+    sessions = verification_session.scalars(
+        select(SessionModel)
+        .where(SessionModel.service_id == service_id)
+        .order_by(SessionModel.name)
+    ).all()
+
+    assert len(sessions) == 2
+
+    sessions_by_room = {
+        session.room_id: session
+        for session in sessions
+    }
+
+    nursery_session = sessions_by_room[nursery_id]
+    assert nursery_session.name == "Sala 1"
+    assert nursery_session.min_age_years == 3
+    assert nursery_session.max_age_years == 5
+
+    children_session = sessions_by_room[children_id]
+    assert children_session.name == "Sala 2"
+    assert children_session.min_age_years == 6
+    assert children_session.max_age_years == 11
+
+    assert inactive_id not in sessions_by_room
+
 
 
 def test_create_room(
@@ -415,6 +473,8 @@ def test_list_rooms_returns_only_active_rooms(
                 name="Sala Infantil",
                 normalized_name="sala infantil",
                 is_active=True,
+                min_age_years=3,
+                max_age_years=5,
             ),
             RoomModel(
                 id=uuid4(),
@@ -431,11 +491,13 @@ def test_list_rooms_returns_only_active_rooms(
         headers=headers,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json() == [
         {
             "id": str(active_room_id),
             "name": "Sala Infantil",
+            "min_age_years": 3,
+            "max_age_years": 5,
         }
     ]
 
@@ -5126,3 +5188,710 @@ def test_change_own_password_rejects_inactive_user(
 
     session.refresh(user)
     assert user.password_hash == original_hash
+
+
+def test_list_services_filters_by_date_and_orders_by_start_time(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    morning_id = uuid4()
+    evening_id = uuid4()
+
+    verification_session.add_all(
+        [
+            ServiceModel(
+                id=evening_id,
+                name="Culto da Noite",
+                starts_at=datetime(2026, 11, 22, 19, 0),
+                ends_at=datetime(2026, 11, 22, 21, 0),
+            ),
+            ServiceModel(
+                id=uuid4(),
+                name="Culto de Outro Dia",
+                starts_at=datetime(2026, 11, 29, 9, 0),
+                ends_at=datetime(2026, 11, 29, 11, 0),
+            ),
+            ServiceModel(
+                id=morning_id,
+                name="Culto da Manhã",
+                starts_at=datetime(2026, 11, 22, 9, 0),
+                ends_at=datetime(2026, 11, 22, 11, 0),
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/services",
+        params={"date": "2026-11-22"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "service_id": str(morning_id),
+            "name": "Culto da Manhã",
+            "starts_at": "2026-11-22T09:00:00",
+            "ends_at": "2026-11-22T11:00:00",
+        },
+        {
+            "service_id": str(evening_id),
+            "name": "Culto da Noite",
+            "starts_at": "2026-11-22T19:00:00",
+            "ends_at": "2026-11-22T21:00:00",
+        },
+    ]
+
+
+def test_list_services_returns_empty_list_for_date_without_services(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
+
+    response = client.get(
+        "/api/services",
+        params={"date": "2026-11-22"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_services_without_date_returns_all_services(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
+
+    service_id = uuid4()
+    verification_session.add(
+        ServiceModel(
+            id=service_id,
+            name="Culto Especial",
+            starts_at=datetime(2026, 11, 22, 19, 0),
+            ends_at=None,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get("/api/services", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "service_id": str(service_id),
+            "name": "Culto Especial",
+            "starts_at": "2026-11-22T19:00:00",
+            "ends_at": None,
+        }
+    ]
+
+
+def test_list_services_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get("/api/services")
+
+    assert response.status_code == 401
+
+
+def test_list_sessions_filters_by_service(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    service_id = uuid4()
+    other_service_id = uuid4()
+    nursery_room_id = uuid4()
+    children_room_id = uuid4()
+    nursery_session_id = uuid4()
+    children_session_id = uuid4()
+
+    verification_session.add_all(
+        [
+            ServiceModel(
+                id=service_id,
+                name="Culto de Domingo",
+                starts_at=datetime(2026, 11, 22, 9, 0),
+                ends_at=None,
+            ),
+            ServiceModel(
+                id=other_service_id,
+                name="Outro Culto",
+                starts_at=datetime(2026, 11, 29, 9, 0),
+                ends_at=None,
+            ),
+            RoomModel(
+                id=nursery_room_id,
+                name="Berçário",
+                normalized_name="bercario",
+                is_active=True,
+            ),
+            RoomModel(
+                id=children_room_id,
+                name="Infantil",
+                normalized_name="infantil",
+                is_active=True,
+            ),
+        ]
+    )
+    verification_session.flush()
+
+    verification_session.add_all(
+        [
+            SessionModel(
+                id=children_session_id,
+                service_id=service_id,
+                room_id=children_room_id,
+                name="Infantil",
+                min_age_years=3,
+                max_age_years=6,
+                status="scheduled",
+            ),
+            SessionModel(
+                id=nursery_session_id,
+                service_id=service_id,
+                room_id=nursery_room_id,
+                name="Berçário",
+                min_age_years=0,
+                max_age_years=2,
+                status="scheduled",
+            ),
+            SessionModel(
+                id=uuid4(),
+                service_id=other_service_id,
+                room_id=nursery_room_id,
+                name="Outro Berçário",
+                min_age_years=0,
+                max_age_years=2,
+                status="scheduled",
+            ),
+        ]
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/sessions",
+        params={"service_id": str(service_id)},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "session_id": str(nursery_session_id),
+            "service_id": str(service_id),
+            "room_id": str(nursery_room_id),
+            "name": "Berçário",
+            "min_age_years": 0,
+            "max_age_years": 2,
+            "status": "scheduled",
+        },
+        {
+            "session_id": str(children_session_id),
+            "service_id": str(service_id),
+            "room_id": str(children_room_id),
+            "name": "Infantil",
+            "min_age_years": 3,
+            "max_age_years": 6,
+            "status": "scheduled",
+        },
+    ]
+
+
+def test_list_sessions_returns_404_for_unknown_service(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
+
+    response = client.get(
+        "/api/sessions",
+        params={"service_id": str(uuid4())},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Service not found"
+
+
+def test_list_sessions_returns_empty_list_for_service_without_sessions(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(verification_session)
+    service_id = uuid4()
+
+    verification_session.add(
+        ServiceModel(
+            id=service_id,
+            name="Culto Especial",
+            starts_at=datetime(2026, 11, 22, 19, 0),
+            ends_at=None,
+        )
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/sessions",
+        params={"service_id": str(service_id)},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_sessions_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.get(
+        "/api/sessions",
+        params={"service_id": str(uuid4())},
+    )
+
+    assert response.status_code == 401
+
+
+def test_get_admin_settings_returns_current_settings(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    verification_session.add(
+        MinistrySettingsModel(pager_required=True)
+    )
+    verification_session.commit()
+
+    response = client.get(
+        "/api/admin/settings",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "pager_required": True,
+    }
+
+
+def test_get_admin_settings_rejects_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.get(
+        "/api/admin/settings",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_service_rejects_room_without_age_range(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    verification_session.add(
+        RoomModel(
+            id=uuid4(),
+            name="Sala sem configuração",
+            normalized_name="sala sem configuracao",
+            is_active=True,
+            min_age_years=None,
+            max_age_years=None,
+        )
+    )
+    verification_session.commit()
+
+    response = client.post(
+        "/api/services",
+        headers=headers,
+        json={
+            "name": "Culto 22/11/2026",
+            "starts_at": "2026-11-22T09:00:00",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "age range" in response.json()["detail"]
+
+    services = verification_session.scalars(
+        select(ServiceModel)
+    ).all()
+
+    sessions = verification_session.scalars(
+        select(SessionModel)
+    ).all()
+
+    assert services == []
+    assert sessions == []
+
+
+def test_create_service_rolls_back_when_session_creation_fails(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    verification_session.add(
+        RoomModel(
+            id=uuid4(),
+            name="Sala Infantil",
+            normalized_name="sala infantil",
+            is_active=True,
+            min_age_years=3,
+            max_age_years=5,
+        )
+    )
+    verification_session.commit()
+
+    with patch(
+        "church_city_kids.api.main.SqlAlchemyCreateServiceRepository.add_session",
+        side_effect=RuntimeError("Simulated session persistence failure"),
+    ):
+        response = client.post(
+            "/api/services",
+            headers=headers,
+            json={
+                "name": "Culto 22/11/2026",
+                "starts_at": "2026-11-22T09:00:00",
+            },
+        )
+
+    assert response.status_code == 500
+
+    services = verification_session.scalars(
+        select(ServiceModel)
+    ).all()
+
+    sessions = verification_session.scalars(
+        select(SessionModel)
+    ).all()
+
+    assert services == []
+    assert sessions == []
+
+
+
+def test_update_room_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    room = RoomModel(
+        id=uuid4(),
+        name="Sala 1",
+        normalized_name="sala 1",
+        is_active=True,
+        min_age_years=3,
+        max_age_years=5,
+    )
+    verification_session.add(room)
+    verification_session.commit()
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{room.id}",
+        headers=headers,
+        json={
+            "name": "Berçário",
+            "min_age_years": 2,
+            "max_age_years": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    verification_session.refresh(room)
+
+    assert room.name == "Berçário"
+    assert room.normalized_name == "berçário"
+    assert room.min_age_years == 2
+    assert room.max_age_years == 3
+    assert room.is_active is True
+
+
+def test_update_room_preserves_fields_not_provided(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    room = RoomModel(
+        id=uuid4(),
+        name="Sala 1",
+        normalized_name="sala 1",
+        is_active=True,
+        min_age_years=3,
+        max_age_years=5,
+    )
+    verification_session.add(room)
+    verification_session.commit()
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{room.id}",
+        headers=headers,
+        json={"name": "Sala Infantil"},
+    )
+
+    assert response.status_code == 200
+
+    verification_session.refresh(room)
+
+    assert room.name == "Sala Infantil"
+    assert room.min_age_years == 3
+    assert room.max_age_years == 5
+
+
+def test_update_room_returns_404_when_room_does_not_exist(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{uuid4()}",
+        headers=headers,
+        json={"name": "Berçário"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Room not found"}
+
+
+def test_update_room_rejects_duplicate_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    first_room = RoomModel(
+        id=uuid4(),
+        name="Sala 1",
+        normalized_name="sala 1",
+        is_active=True,
+    )
+    second_room = RoomModel(
+        id=uuid4(),
+        name="Sala 2",
+        normalized_name="sala 2",
+        is_active=True,
+    )
+
+    verification_session.add_all([first_room, second_room])
+    verification_session.commit()
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{second_room.id}",
+        headers=headers,
+        json={"name": "Sala 1"},
+    )
+
+    assert response.status_code == 409
+
+    verification_session.refresh(second_room)
+    assert second_room.name == "Sala 2"
+
+
+def test_update_room_rejects_invalid_age_range(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    room = RoomModel(
+        id=uuid4(),
+        name="Sala 1",
+        normalized_name="sala 1",
+        is_active=True,
+        min_age_years=3,
+        max_age_years=5,
+    )
+    verification_session.add(room)
+    verification_session.commit()
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{room.id}",
+        headers=headers,
+        json={
+            "min_age_years": 7,
+            "max_age_years": 5,
+        },
+    )
+
+    assert response.status_code == 422
+
+    verification_session.refresh(room)
+    assert room.min_age_years == 3
+    assert room.max_age_years == 5
+
+
+def test_update_room_rejects_empty_patch(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{uuid4()}",
+        headers=headers,
+        json={},
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_room_rejects_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{uuid4()}",
+        headers=headers,
+        json={"name": "Berçário"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_update_room_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, _ = api_client
+
+    response = client.patch(
+        f"/api/rooms/{uuid4()}",
+        json={"name": "Berçário"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_update_room_does_not_modify_existing_sessions(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+
+    verification_session.add(
+        ServiceModel(
+            id=service_id,
+            name="Culto de Domingo",
+            starts_at=datetime(2026, 11, 22, 9, 0),
+        )
+    )
+    verification_session.flush()
+
+    room = RoomModel(
+        id=room_id,
+        name="Sala 1",
+        normalized_name="sala 1",
+        is_active=True,
+        min_age_years=3,
+        max_age_years=5,
+    )
+
+    verification_session.add(room)
+    verification_session.flush()
+
+    existing_session = SessionModel(
+        id=session_id,
+        service_id=service_id,
+        room_id=room_id,
+        name="Sala 1",
+        min_age_years=3,
+        max_age_years=5,
+        status="scheduled",
+    )
+
+    verification_session.add(existing_session)
+    verification_session.commit()
+
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        f"/api/rooms/{room_id}",
+        headers=headers,
+        json={
+            "name": "Sala Infantil",
+            "min_age_years": 2,
+            "max_age_years": 6,
+        },
+    )
+
+    assert response.status_code == 200
+
+    verification_session.refresh(existing_session)
+
+    assert existing_session.name == "Sala 1"
+    assert existing_session.min_age_years == 3
+    assert existing_session.max_age_years == 5

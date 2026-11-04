@@ -17,6 +17,8 @@ def test_list_rooms_returns_active_rooms() -> None:
         id=uuid4(),
         name="Sala Infantil",
         is_active=True,
+        min_age_years=3,
+        max_age_years=5,
     )
 
     inactive_room = Room(
@@ -34,3 +36,20 @@ def test_list_rooms_returns_active_rooms() -> None:
     assert len(result) == 1
     assert result[0].id == active_room.id
     assert result[0].name == "Sala Infantil"
+    assert result[0].min_age_years == 3
+    assert result[0].max_age_years == 5
+
+
+def test_list_rooms_supports_rooms_without_age_ranges() -> None:
+    room = Room(
+        id=uuid4(),
+        name="Sala sem configuração",
+    )
+
+    repository = FakeListRoomsRepository(rooms=[room])
+
+    result = list_rooms(repository)
+
+    assert len(result) == 1
+    assert result[0].min_age_years is None
+    assert result[0].max_age_years is None

@@ -9,6 +9,8 @@ from church_city_kids.domain.scheduling import Room
 class RoomResult:
     id: UUID
     name: str
+    min_age_years: int | None = None
+    max_age_years: int | None = None
 
 
 class ListRoomsRepository(Protocol):
@@ -22,6 +24,8 @@ def list_rooms(repository: ListRoomsRepository) -> list[RoomResult]:
         RoomResult(
             id=room.id,
             name=room.name,
+            min_age_years=room.min_age_years,
+            max_age_years=room.max_age_years,
         )
         for room in rooms
     ]

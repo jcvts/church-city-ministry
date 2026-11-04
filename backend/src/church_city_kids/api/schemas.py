@@ -55,6 +55,33 @@ class CreateServiceResponse(BaseModel):
 
 class CreateRoomBody(BaseModel):
     name: str
+    min_age_years: int | None = None
+    max_age_years: int | None = None
+
+
+
+class UpdateRoomBody(BaseModel):
+    name: str | None = None
+    min_age_years: int | None = None
+    max_age_years: int | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> "UpdateRoomBody":
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+
+        if "name" in self.model_fields_set:
+            if self.name is None or not self.name.strip():
+                raise ValueError("Room name cannot be blank")
+
+        for field_name in ("min_age_years", "max_age_years"):
+            value = getattr(self, field_name)
+
+            if field_name in self.model_fields_set:
+                if value is not None and value < 0:
+                    raise ValueError(f"Invalid {field_name}")
+
+        return self
 
 
 class CreateRoomResponse(BaseModel):
@@ -64,6 +91,8 @@ class CreateRoomResponse(BaseModel):
 class RoomResponse(BaseModel):
     id: UUID
     name: str
+    min_age_years: int | None = None
+    max_age_years: int | None = None
 
 
 class CreateSessionBody(BaseModel):

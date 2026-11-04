@@ -1,9 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date, datetime, time, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from church_city_kids.api.dependencies import (
@@ -42,6 +44,7 @@ from church_city_kids.api.schemas import (
     UpdateFamilyBody,
     UpdateGuardianBody,
     UpdateMinistrySettingsBody,
+    UpdateRoomBody,
     UpdateUserStatusBody,
     UpdateUserStatusResponse,
 )
@@ -78,6 +81,7 @@ from church_city_kids.application.create_room import (
 )
 from church_city_kids.application.create_service import (
     CreateServiceRequest,
+    RoomAgeRangeNotConfiguredError,
     create_service,
 )
 from church_city_kids.application.create_session import (
@@ -146,6 +150,13 @@ from church_city_kids.application.update_guardian import (
     UpdateGuardianRequest,
     update_guardian,
 )
+from church_city_kids.application.update_room import (
+    RoomNotFoundError as UpdateRoomNotFoundError,
+)
+from church_city_kids.application.update_room import (
+    UpdateRoomRequest,
+    update_room,
+)
 from church_city_kids.application.update_user_status import (
     UserNotFoundError,
     update_user_status,
@@ -196,6 +207,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyUpdateChildRepository,
     SqlAlchemyUpdateFamilyRepository,
     SqlAlchemyUpdateGuardianRepository,
+    SqlAlchemyUpdateRoomRepository,
     SqlAlchemyUserRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
@@ -660,6 +672,42 @@ def remove_child_guardian_endpoint(
         raise
 
 
+@app.get("/api/services")
+def list_services_endpoint(
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+    date_filter: Annotated[date | None, Query(alias="date")] = None,
+) -> list[dict[str, str | None]]:
+    statement = select(ServiceModel)
+
+    if date_filter is not None:
+        start = datetime.combine(date_filter, time.min)
+        end = start + timedelta(days=1)
+
+        statement = statement.where(
+            ServiceModel.starts_at >= start,
+            ServiceModel.starts_at < end,
+        )
+
+    statement = statement.order_by(ServiceModel.starts_at, ServiceModel.id)
+
+    services = session.scalars(statement).all()
+
+    return [
+        {
+            "service_id": str(service.id),
+            "name": service.name,
+            "starts_at": service.starts_at.isoformat(),
+            "ends_at": (
+                service.ends_at.isoformat()
+                if service.ends_at is not None
+                else None
+            ),
+        }
+        for service in services
+    ]
+
+
 @app.post(
     "/api/services",
     response_model=CreateServiceResponse,
@@ -683,7 +731,12 @@ def create_service_endpoint(
         )
 
         session.commit()
-
+    except RoomAgeRangeNotConfiguredError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except Exception:
         session.rollback()
         raise
@@ -748,7 +801,11 @@ def create_room_endpoint(
 
     try:
         result = create_room(
-            CreateRoomRequest(name=body.name),
+            CreateRoomRequest(
+                name=body.name,
+                min_age_years=body.min_age_years,
+                max_age_years=body.max_age_years,
+            ),
             repository,
         )
 
@@ -784,8 +841,92 @@ def list_rooms_endpoint(
         RoomResponse(
             id=room.id,
             name=room.name,
+            min_age_years=room.min_age_years,
+            max_age_years=room.max_age_years,
         )
         for room in result
+    ]
+
+
+@app.patch(
+    "/api/rooms/{room_id}",
+    status_code=status.HTTP_200_OK,
+)
+def update_room_endpoint(
+    room_id: UUID,
+    body: UpdateRoomBody,
+    session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, str]:
+    repository = SqlAlchemyUpdateRoomRepository(session)
+    updates = body.model_dump(exclude_unset=True)
+
+    try:
+        update_room(
+            UpdateRoomRequest(
+                room_id=room_id,
+                **updates,
+            ),
+            repository,
+        )
+
+        session.commit()
+
+    except UpdateRoomNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found",
+        ) from exc
+
+    except RoomNameAlreadyExistsError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Room name already exists",
+        ) from exc
+
+    except InvalidAgeRangeError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return {"status": "updated"}
+
+
+@app.get("/api/sessions")
+def list_sessions_endpoint(
+    service_id: UUID,
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
+) -> list[dict[str, str | int]]:
+    repository = SqlAlchemyCreateSessionRepository(db_session)
+
+    if repository.get_service(service_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Service not found",
+        )
+
+    sessions = repository.get_sessions_for_service(service_id)
+
+    return [
+        {
+            "session_id": str(item.id),
+            "service_id": str(item.service_id),
+            "room_id": str(item.room_id),
+            "name": item.name,
+            "min_age_years": item.min_age_years,
+            "max_age_years": item.max_age_years,
+            "status": item.status.value,
+        }
+        for item in sessions
     ]
 
 
@@ -983,6 +1124,23 @@ def check_out_child_endpoint(
         raise
 
     return CheckOutResponse(attendance_id=result.attendance_id)
+
+
+@app.get("/api/admin/settings")
+def get_ministry_settings_endpoint(
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, bool]:
+    repository = SqlAlchemyMinistrySettingsRepository(db_session)
+    settings = repository.get()
+
+    if settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ministry settings not found",
+        )
+
+    return {"pager_required": settings.pager_required}
 
 
 @app.patch("/api/admin/settings")

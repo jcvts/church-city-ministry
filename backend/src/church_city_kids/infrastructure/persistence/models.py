@@ -100,6 +100,20 @@ class ServiceModel(Base):
 
 class RoomModel(Base):
     __tablename__ = "rooms"
+    __table_args__ = (
+        CheckConstraint(
+            """
+            (min_age_years IS NULL AND max_age_years IS NULL)
+            OR (
+                min_age_years IS NOT NULL
+                AND max_age_years IS NOT NULL
+                AND min_age_years >= 0
+                AND max_age_years >= min_age_years
+            )
+            """,
+            name="ck_rooms_valid_age_range",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -111,6 +125,14 @@ class RoomModel(Base):
         default=lambda context: normalize_room_name(
             context.get_current_parameters()["name"]
         ),
+    )
+    min_age_years: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    max_age_years: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )
 
 

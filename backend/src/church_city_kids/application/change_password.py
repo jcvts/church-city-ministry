@@ -48,9 +48,7 @@ def change_password(
         current_password,
         user.password_hash,
     ):
-        raise InvalidCurrentPasswordError(
-            "Current password is incorrect"
-        )
+        raise InvalidCurrentPasswordError("Current password is incorrect")
 
     if len(new_password) < 12:
         raise ValueError("Password must contain at least 12 characters")

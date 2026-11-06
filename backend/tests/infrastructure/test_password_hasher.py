@@ -37,7 +37,10 @@ def test_password_hasher_generates_unique_hashes() -> None:
 def test_password_hasher_rejects_invalid_hash() -> None:
     hasher = PasswordHasher()
 
-    assert hasher.verify(
-        "MySecurePassword123!",
-        "not-a-valid-argon2-hash",
-    ) is False
+    assert (
+        hasher.verify(
+            "MySecurePassword123!",
+            "not-a-valid-argon2-hash",
+        )
+        is False
+    )

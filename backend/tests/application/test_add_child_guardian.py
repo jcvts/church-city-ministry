@@ -36,15 +36,11 @@ class FakeAddChildGuardianRepository:
         return self.guardian if self.guardian.id == guardian_id else None
 
     def get_child_guardians(self, child_id):
-        return [
-            link
-            for link in self.links
-            if link.child_id == child_id
-        ]
+        return [link for link in self.links if link.child_id == child_id]
 
     def add_child_guardian(self, link: ChildGuardian) -> None:
         self.links.append(link)
-    
+
     def add_guardian(self, guardian: Guardian) -> None:
         self.guardians.append(guardian)
 

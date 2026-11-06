@@ -48,12 +48,8 @@ def test_lifespan_creates_real_database_backup(
     database_path = tmp_path / "church_city_kids.db"
 
     with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-        )
-        connection.execute(
-            "INSERT INTO children (id) VALUES (1)"
-        )
+        connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO children (id) VALUES (1)")
 
     monkeypatch.setenv(
         "CHURCH_CITY_KIDS_DB_PATH",
@@ -70,8 +66,6 @@ def test_lifespan_creates_real_database_backup(
     assert backups
 
     with sqlite3.connect(backups[0]) as connection:
-        children = connection.execute(
-            "SELECT id FROM children"
-        ).fetchall()
+        children = connection.execute("SELECT id FROM children").fetchall()
 
     assert children == [(1,)]

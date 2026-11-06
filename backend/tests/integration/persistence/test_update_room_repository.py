@@ -185,9 +185,7 @@ def test_update_room_does_not_change_existing_sessions(
                 ServiceModel(
                     id=service_id,
                     name="Culto de Domingo",
-                    starts_at=datetime(
-                        2026, 11, 22, 9, 0
-                    ),
+                    starts_at=datetime(2026, 11, 22, 9, 0),
                 ),
                 RoomModel(
                     id=room.id,

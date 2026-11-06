@@ -17,9 +17,7 @@ def get_database_path() -> Path:
 
     if programdata:
         windows_path = (
-            PureWindowsPath(programdata)
-            / "ChurchCityKids"
-            / "church_city_kids.db"
+            PureWindowsPath(programdata) / "ChurchCityKids" / "church_city_kids.db"
         )
         return Path(str(windows_path))
 

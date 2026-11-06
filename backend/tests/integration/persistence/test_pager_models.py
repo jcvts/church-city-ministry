@@ -174,8 +174,6 @@ def test_family_cannot_have_two_active_pagers_in_same_service(
         first_pager_id = uuid4()
         second_pager_id = uuid4()
 
-
-
         session.add_all(
             [
                 PagerModel(

@@ -171,13 +171,14 @@ def test_room_name_migration_rejects_existing_duplicates(
     engine = create_engine(database_url)
 
     with engine.connect() as connection:
-        names = connection.execute(
-            text("SELECT name FROM rooms ORDER BY name")
-        ).scalars().all()
+        names = (
+            connection.execute(text("SELECT name FROM rooms ORDER BY name"))
+            .scalars()
+            .all()
+        )
 
         columns = {
-            column["name"]
-            for column in inspect(connection).get_columns("rooms")
+            column["name"] for column in inspect(connection).get_columns("rooms")
         }
 
     assert names == [
@@ -340,8 +341,7 @@ def test_checkout_guardian_migration_preserves_existing_attendances(
         assert attendance.checked_out_by_guardian_id is None
 
         columns = {
-            column["name"]
-            for column in inspect(connection).get_columns("attendances")
+            column["name"] for column in inspect(connection).get_columns("attendances")
         }
 
         assert "checked_out_by_guardian_id" in columns
@@ -382,8 +382,7 @@ def test_checkout_guardian_migration_preserves_existing_attendances(
 
     with engine.connect() as connection:
         columns = {
-            column["name"]
-            for column in inspect(connection).get_columns("attendances")
+            column["name"] for column in inspect(connection).get_columns("attendances")
         }
 
         assert "checked_out_by_guardian_id" not in columns
@@ -420,10 +419,7 @@ def test_ministry_settings_migration_creates_default_settings(
 
     with engine.connect() as connection:
         settings = connection.execute(
-            text(
-                "SELECT id, pager_required "
-                "FROM ministry_settings"
-            )
+            text("SELECT id, pager_required FROM ministry_settings")
         ).one()
 
     assert settings.id == 1
@@ -447,18 +443,17 @@ def test_users_migration_enforces_case_insensitive_username(
 
     try:
         with engine.connect() as connection:
-            indexes = connection.execute(
-                text("PRAGMA index_list('users')")
-            ).mappings().all()
+            indexes = (
+                connection.execute(text("PRAGMA index_list('users')")).mappings().all()
+            )
 
         with engine.connect() as connection:
-            indexes = connection.execute(
-                text("PRAGMA index_list('users')")
-            ).mappings().all()
+            indexes = (
+                connection.execute(text("PRAGMA index_list('users')")).mappings().all()
+            )
 
         assert any(
-            index["name"] == "uq_users_username_lower"
-            and index["unique"] == 1
+            index["name"] == "uq_users_username_lower" and index["unique"] == 1
             for index in indexes
         )
 
@@ -616,8 +611,7 @@ def test_user_role_migration_downgrade_preserves_users(
     try:
         with engine.connect() as connection:
             columns = {
-                column["name"]
-                for column in inspect(connection).get_columns("users")
+                column["name"] for column in inspect(connection).get_columns("users")
             }
 
             user = connection.execute(
@@ -631,9 +625,9 @@ def test_user_role_migration_downgrade_preserves_users(
                 {"id": user_id},
             ).one()
 
-            indexes = connection.execute(
-                text("PRAGMA index_list('users')")
-            ).mappings().all()
+            indexes = (
+                connection.execute(text("PRAGMA index_list('users')")).mappings().all()
+            )
 
         assert "role" not in columns
         assert user.id == user_id
@@ -642,8 +636,7 @@ def test_user_role_migration_downgrade_preserves_users(
         assert user.is_active == 1
 
         assert any(
-            index["name"] == "uq_users_username_lower"
-            and index["unique"] == 1
+            index["name"] == "uq_users_username_lower" and index["unique"] == 1
             for index in indexes
         )
     finally:

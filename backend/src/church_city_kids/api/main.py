@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from church_city_kids.api.dependencies import (
@@ -17,6 +18,8 @@ from church_city_kids.api.dependencies import (
 from church_city_kids.api.schemas import (
     AddChildGuardianBody,
     AddChildGuardianResponse,
+    AssignVolunteerBody,
+    AssignVolunteerResponse,
     ChangePasswordBody,
     CheckInBody,
     CheckInResponse,
@@ -32,8 +35,12 @@ from church_city_kids.api.schemas import (
     CreateSessionResponse,
     CreateUserBody,
     CreateUserResponse,
+    CreateVolunteerBody,
+    CreateVolunteerResponse,
     GuardianDetailResponse,
     ListUserResponse,
+    ListVolunteerAssignmentResponse,
+    ListVolunteerResponse,
     LoginBody,
     LoginResponse,
     RegisterChildBody,
@@ -47,6 +54,7 @@ from church_city_kids.api.schemas import (
     UpdateRoomBody,
     UpdateUserStatusBody,
     UpdateUserStatusResponse,
+    UpdateVolunteerBody,
 )
 from church_city_kids.application.add_child_guardian import (
     AddChildGuardianRequest,
@@ -55,6 +63,16 @@ from church_city_kids.application.add_child_guardian import (
 )
 from church_city_kids.application.add_child_guardian import (
     ChildNotFoundError as AddGuardianChildNotFoundError,
+)
+from church_city_kids.application.assign_volunteer import (
+    AssignVolunteerRequest,
+    assign_volunteer,
+)
+from church_city_kids.application.assign_volunteer import (
+    SessionNotFoundError as AssignVolunteerSessionNotFoundError,
+)
+from church_city_kids.application.assign_volunteer import (
+    VolunteerNotFoundError as AssignVolunteerNotFoundError,
 )
 from church_city_kids.application.authenticate_user import authenticate_user
 from church_city_kids.application.change_password import (
@@ -95,6 +113,10 @@ from church_city_kids.application.create_user import (
     UsernameAlreadyExistsError,
     create_user,
 )
+from church_city_kids.application.create_volunteer import (
+    CreateVolunteerRequest,
+    create_volunteer,
+)
 from church_city_kids.application.get_child_attendance_history import (
     get_child_attendance_history,
 )
@@ -113,6 +135,13 @@ from church_city_kids.application.list_service_attendances import (
     list_service_attendances,
 )
 from church_city_kids.application.list_users import list_users
+from church_city_kids.application.list_volunteer_assignments import (
+    ServiceNotFoundError as ListVolunteerAssignmentsServiceNotFoundError,
+)
+from church_city_kids.application.list_volunteer_assignments import (
+    list_volunteer_assignments,
+)
+from church_city_kids.application.list_volunteers import list_volunteers
 from church_city_kids.application.registration import (
     RegisterChildRequest,
     register_child,
@@ -161,6 +190,13 @@ from church_city_kids.application.update_user_status import (
     UserNotFoundError,
     update_user_status,
 )
+from church_city_kids.application.update_volunteer import (
+    UpdateVolunteerRequest,
+    update_volunteer,
+)
+from church_city_kids.application.update_volunteer import (
+    VolunteerNotFoundError as UpdateVolunteerNotFoundError,
+)
 from church_city_kids.domain.errors import (
     AttendanceAlreadyCheckedOutError,
     CheckOutBeforeCheckInError,
@@ -175,6 +211,8 @@ from church_city_kids.domain.errors import (
     RoomInactiveError,
     RoomNameAlreadyExistsError,
     SessionNotOpenError,
+    VolunteerAlreadyAssignedInServiceError,
+    VolunteerInactiveError,
 )
 from church_city_kids.domain.user import User
 from church_city_kids.infrastructure.persistence.automatic_backup import (
@@ -186,6 +224,7 @@ from church_city_kids.infrastructure.persistence.database_config import (
 from church_city_kids.infrastructure.persistence.models import ServiceModel
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyAddChildGuardianRepository,
+    SqlAlchemyAssignVolunteerRepository,
     SqlAlchemyCheckInRepository,
     SqlAlchemyCheckOutRepository,
     SqlAlchemyChildAttendanceHistoryRepository,
@@ -199,6 +238,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyListFamiliesRepository,
     SqlAlchemyListGuardiansRepository,
     SqlAlchemyListRoomsRepository,
+    SqlAlchemyListVolunteerAssignmentsRepository,
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
     SqlAlchemyRemoveChildGuardianRepository,
@@ -209,6 +249,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyUpdateGuardianRepository,
     SqlAlchemyUpdateRoomRepository,
     SqlAlchemyUserRepository,
+    SqlAlchemyVolunteerRepository,
 )
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
 from church_city_kids.infrastructure.security.passwords import PasswordHasher
@@ -232,6 +273,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         backup_manager.stop()
+
 
 app = FastAPI(
     title="Church City Kids API",
@@ -699,9 +741,7 @@ def list_services_endpoint(
             "name": service.name,
             "starts_at": service.starts_at.isoformat(),
             "ends_at": (
-                service.ends_at.isoformat()
-                if service.ends_at is not None
-                else None
+                service.ends_at.isoformat() if service.ends_at is not None else None
             ),
         }
         for service in services
@@ -752,7 +792,7 @@ def get_service_attendances(
     session: Annotated[Session, Depends(get_db_session)],
     _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> list[dict[str, str | None]]:
-    
+
     service = session.get(ServiceModel, service_id)
 
     if service is None:
@@ -784,6 +824,42 @@ def get_service_attendances(
             ),
         }
         for item in attendances
+    ]
+
+
+@app.get(
+    "/api/services/{service_id}/volunteers",
+    response_model=list[ListVolunteerAssignmentResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_service_volunteers_endpoint(
+    service_id: UUID,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_bearer_token),
+) -> list[ListVolunteerAssignmentResponse]:
+    repository = SqlAlchemyListVolunteerAssignmentsRepository(db_session)
+
+    try:
+        assignments = list_volunteer_assignments(
+            service_id=service_id,
+            repository=repository,
+        )
+    except ListVolunteerAssignmentsServiceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Service not found",
+        ) from exc
+
+    return [
+        ListVolunteerAssignmentResponse(
+            assignment_id=item.assignment_id,
+            service_id=item.service_id,
+            session_id=item.session_id,
+            volunteer_id=item.volunteer_id,
+            volunteer_name=item.volunteer_name,
+            role=item.role,
+        )
+        for item in assignments
     ]
 
 
@@ -993,6 +1069,74 @@ def create_session_endpoint(
         raise
 
     return CreateSessionResponse(session_id=result.session_id)
+
+
+@app.post(
+    "/api/sessions/{session_id}/volunteers",
+    response_model=AssignVolunteerResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def assign_volunteer_endpoint(
+    session_id: UUID,
+    body: AssignVolunteerBody,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_bearer_token),
+) -> AssignVolunteerResponse:
+    repository = SqlAlchemyAssignVolunteerRepository(db_session)
+
+    try:
+        result = assign_volunteer(
+            AssignVolunteerRequest(
+                session_id=session_id,
+                volunteer_id=body.volunteer_id,
+                role=body.role,
+            ),
+            repository,
+        )
+        db_session.commit()
+
+    except AssignVolunteerSessionNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        ) from exc
+
+    except AssignVolunteerNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Volunteer not found",
+        ) from exc
+
+    except VolunteerInactiveError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Volunteer is inactive",
+        ) from exc
+
+    except VolunteerAlreadyAssignedInServiceError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Volunteer already assigned to this service",
+        ) from exc
+
+    except IntegrityError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Volunteer assignment conflicts with existing data",
+        ) from exc
+
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return AssignVolunteerResponse(
+        assignment_id=result.assignment_id,
+    )
 
 
 @app.post(
@@ -1260,6 +1404,101 @@ def update_guardian_endpoint(
         ) from exc
     except Exception:
         session.rollback()
+        raise
+
+    return {"status": "updated"}
+
+
+@app.post(
+    "/api/volunteers",
+    response_model=CreateVolunteerResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_volunteer_endpoint(
+    body: CreateVolunteerBody,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
+) -> CreateVolunteerResponse:
+    repository = SqlAlchemyVolunteerRepository(db_session)
+
+    try:
+        volunteer_id = create_volunteer(
+            CreateVolunteerRequest(full_name=body.full_name),
+            repository,
+        )
+
+        db_session.commit()
+
+    except ValueError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return CreateVolunteerResponse(
+        id=volunteer_id,
+        full_name=body.full_name.strip(),
+        is_active=True,
+    )
+
+
+@app.get(
+    "/api/volunteers",
+    response_model=list[ListVolunteerResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_volunteers_endpoint(
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_bearer_token),
+) -> list[ListVolunteerResponse]:
+    repository = SqlAlchemyVolunteerRepository(db_session)
+
+    volunteers = list_volunteers(repository=repository)
+
+    return [
+        ListVolunteerResponse(
+            id=volunteer.id,
+            full_name=volunteer.full_name,
+            is_active=volunteer.is_active,
+        )
+        for volunteer in volunteers
+    ]
+
+
+@app.patch(
+    "/api/volunteers/{volunteer_id}",
+    status_code=status.HTTP_200_OK,
+)
+def update_volunteer_endpoint(
+    volunteer_id: UUID,
+    body: UpdateVolunteerBody,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_admin),
+) -> dict[str, str]:
+    repository = SqlAlchemyVolunteerRepository(db_session)
+    updates = body.model_dump(exclude_unset=True)
+
+    try:
+        update_volunteer(
+            UpdateVolunteerRequest(
+                volunteer_id=volunteer_id,
+                **updates,
+            ),
+            repository,
+        )
+
+        db_session.commit()
+
+    except UpdateVolunteerNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Volunteer not found",
+        ) from exc
+
+    except Exception:
+        db_session.rollback()
         raise
 
     return {"status": "updated"}

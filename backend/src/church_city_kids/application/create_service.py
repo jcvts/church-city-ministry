@@ -57,7 +57,7 @@ def create_service(
     )
 
     existing_sessions: list[Session] = []
-    
+
     sessions: list[Session] = []
 
     for room in rooms:
@@ -74,7 +74,6 @@ def create_service(
         )
 
         sessions.append(session)
-
 
     repository.add_service(service)
 

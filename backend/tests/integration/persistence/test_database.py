@@ -25,9 +25,7 @@ def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
     engine = create_sqlite_engine(tmp_path / "test.db")
 
     with engine.connect() as connection:
-        enabled = connection.execute(
-            text("PRAGMA foreign_keys")
-        ).scalar_one()
+        enabled = connection.execute(text("PRAGMA foreign_keys")).scalar_one()
 
     assert enabled == 1
 
@@ -35,9 +33,7 @@ def test_sqlite_foreign_keys_are_enabled(tmp_path: Path) -> None:
 def test_create_sqlite_engine_creates_missing_parent_directory(
     tmp_path: Path,
 ) -> None:
-    database_path = (
-        tmp_path / "ChurchCityKids" / "data" / "church_city_kids.db"
-    )
+    database_path = tmp_path / "ChurchCityKids" / "data" / "church_city_kids.db"
 
     engine = create_sqlite_engine(database_path)
 

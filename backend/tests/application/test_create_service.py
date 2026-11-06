@@ -67,8 +67,7 @@ def test_create_service_creates_service_and_sessions_for_active_rooms() -> None:
     assert service.name == "Culto 22/11/2026"
 
     sessions_by_room = {
-        session.room_id: session
-        for session in repository.added_sessions
+        session.room_id: session for session in repository.added_sessions
     }
 
     assert sessions_by_room[nursery.id].service_id == service.id

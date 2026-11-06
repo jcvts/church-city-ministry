@@ -18,8 +18,7 @@ class FakeServiceAttendanceRepository:
         return [
             item
             for item in self.items
-            if item.service_id == service_id
-            and item.checked_out_at is None
+            if item.service_id == service_id and item.checked_out_at is None
         ]
 
 

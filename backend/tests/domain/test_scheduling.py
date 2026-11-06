@@ -8,6 +8,7 @@ from church_city_kids.domain.errors import (
     RoomAlreadyAssignedInServiceError,
     RoomInactiveError,
     VolunteerAlreadyAssignedInServiceError,
+    VolunteerInactiveError,
 )
 from church_city_kids.domain.scheduling import (
     Room,
@@ -62,8 +63,9 @@ def test_same_room_can_be_used_in_different_services() -> None:
     assert first.service_id != second.service_id
 
 
-def test_same_volunteer_cannot_be_assigned_to_two_sessions_in_the_same_service(
-) -> None:
+def test_same_volunteer_cannot_be_assigned_to_two_sessions_in_the_same_service() -> (
+    None
+):
     service = make_service()
     room_a = make_room("A")
     room_b = make_room("B")
@@ -176,3 +178,29 @@ def test_normalize_room_name(
     expected: str,
 ) -> None:
     assert normalize_room_name(name) == expected
+
+
+def test_inactive_volunteer_cannot_be_assigned() -> None:
+    service = make_service()
+    session = create_session(service, make_room(), "Kids 3-5", 3, 5, [])
+    volunteer = make_volunteer()
+    volunteer.deactivate()
+
+    assignments: list[VolunteerAssignment] = []
+
+    with pytest.raises(VolunteerInactiveError):
+        assign_volunteer(session, volunteer, assignments)
+
+    assert assignments == []
+
+
+def test_volunteer_assignment_includes_service_id() -> None:
+    service = make_service()
+    session = create_session(service, make_room(), "Kids 3-5", 3, 5, [])
+    volunteer = make_volunteer()
+
+    assignment = assign_volunteer(session, volunteer, [])
+
+    assert assignment.service_id == service.id
+    assert assignment.session_id == session.id
+    assert assignment.volunteer_id == volunteer.id

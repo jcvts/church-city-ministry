@@ -36,21 +36,15 @@ def create_user(
         raise ValueError("Username cannot be blank")
 
     if len(request.password) < 12:
-        raise ValueError(
-            "Password must contain at least 12 characters"
-        )
-    
+        raise ValueError("Password must contain at least 12 characters")
+
     if not request.password.strip():
-        raise ValueError(
-            "Password cannot contain only whitespace"
-        )
+        raise ValueError("Password cannot contain only whitespace")
 
     existing_user = repository.get_by_username(username)
 
     if existing_user is not None:
-        raise UsernameAlreadyExistsError(
-            "Username already exists"
-        )
+        raise UsernameAlreadyExistsError("Username already exists")
 
     user = User(
         id=uuid4(),

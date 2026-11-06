@@ -20,10 +20,7 @@ class FakeUpdateChildGuardianRepository:
         child_id,
         guardian_id,
     ) -> ChildGuardian | None:
-        if (
-            self.link.child_id == child_id
-            and self.link.guardian_id == guardian_id
-        ):
+        if self.link.child_id == child_id and self.link.guardian_id == guardian_id:
             return self.link
 
         return None

@@ -72,9 +72,7 @@ def test_user_model_rejects_duplicate_username(tmp_path) -> None:
 def test_user_model_rejects_username_with_different_case(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'case_insensitive_users.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'case_insensitive_users.db'}")
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:

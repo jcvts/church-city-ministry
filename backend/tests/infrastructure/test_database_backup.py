@@ -30,9 +30,7 @@ def test_backup_preserves_database_records(tmp_path) -> None:
     assert backup_path.is_file()
 
     with sqlite3.connect(backup_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
     assert records == [("Maria",)]
 
@@ -66,13 +64,9 @@ def test_backup_preserves_committed_wal_records(tmp_path) -> None:
         backup_sqlite_database(source_path, backup_path)
 
     with sqlite3.connect(backup_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
-        integrity = connection.execute(
-            "PRAGMA integrity_check"
-        ).fetchone()
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
 
     assert records == [("Pedro",)]
     assert integrity == ("ok",)
@@ -104,12 +98,8 @@ def test_restore_database_preserves_records(tmp_path) -> None:
     assert restored_path.is_file()
 
     with sqlite3.connect(restored_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
-        integrity = connection.execute(
-            "PRAGMA integrity_check"
-        ).fetchone()
+        records = connection.execute("SELECT name FROM children").fetchall()
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
 
     assert records == [("Maria",)]
     assert integrity == ("ok",)
@@ -149,9 +139,7 @@ def test_restore_rejects_existing_database_without_modifying_it(
         restore_sqlite_database(backup_path, restore_path)
 
     with sqlite3.connect(restore_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
     assert records == [("Pedro",)]
 
@@ -226,9 +214,7 @@ def test_backup_rejects_existing_destination_without_modifying_it(
     assert backup_path.read_bytes() == original_backup
 
     with sqlite3.connect(backup_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children ORDER BY id"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children ORDER BY id").fetchall()
 
     assert records == [("Maria",)]
     assert list(backup_path.parent.glob(".backup_*.db")) == []
@@ -262,15 +248,11 @@ def test_create_timestamped_backup_uses_datetime_in_filename(
         datetime(2026, 11, 1, 9, 30, 45),
     )
 
-    assert backup_path == (
-        backup_directory / "church_city_kids_20261101_093045.db"
-    )
+    assert backup_path == (backup_directory / "church_city_kids_20261101_093045.db")
     assert backup_path.is_file()
 
     with sqlite3.connect(backup_path) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
     assert records == [("Maria",)]
 
@@ -283,9 +265,7 @@ def test_timestamped_backup_preserves_existing_file_on_collision(
     timestamp = datetime(2026, 11, 2, 12, 0, 0)
 
     with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-        )
+        connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
 
     first_backup = create_timestamped_backup(
         source_path=database_path,
@@ -324,9 +304,7 @@ def test_prune_old_backups_keeps_most_recent_files(tmp_path) -> None:
 
     for filename in filenames:
         with sqlite3.connect(backup_directory / filename) as connection:
-            connection.execute(
-                "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-            )
+            connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
             connection.commit()
 
     prune_old_backups(
@@ -334,9 +312,7 @@ def test_prune_old_backups_keeps_most_recent_files(tmp_path) -> None:
         keep_count=3,
     )
 
-    remaining = sorted(
-        path.name for path in backup_directory.glob("*.db")
-    )
+    remaining = sorted(path.name for path in backup_directory.glob("*.db"))
 
     assert remaining == filenames[-3:]
 
@@ -369,18 +345,14 @@ def test_prune_old_backups_ignores_unrelated_and_invalid_files(
             "church_city_kids_20261101_090000.db",
         }:
             with sqlite3.connect(path) as connection:
-                connection.execute(
-                    "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-                )
+                connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
                 connection.commit()
         else:
             path.write_bytes(b"test")
 
     prune_old_backups(backup_directory, keep_count=2)
 
-    remaining = {
-        path.name for path in backup_directory.iterdir()
-    }
+    remaining = {path.name for path in backup_directory.iterdir()}
 
     assert remaining == {
         "church_city_kids_20261031_090000.db",
@@ -403,9 +375,7 @@ def test_prune_old_backups_rejects_invalid_retention(
     backup_directory = tmp_path / "backups"
     backup_directory.mkdir()
 
-    backup_path = (
-        backup_directory / "church_city_kids_20261101_090000.db"
-    )
+    backup_path = backup_directory / "church_city_kids_20261101_090000.db"
     backup_path.write_bytes(b"existing backup")
 
     with pytest.raises(ValueError, match="keep_count must be at least 1"):
@@ -424,12 +394,8 @@ def test_prune_old_backups_preserves_valid_backup_when_newest_is_corrupted(
     backup_directory = tmp_path / "backups"
     backup_directory.mkdir()
 
-    valid_backup = (
-        backup_directory / "church_city_kids_20261031_090000.db"
-    )
-    corrupted_backup = (
-        backup_directory / "church_city_kids_20261101_090000.db"
-    )
+    valid_backup = backup_directory / "church_city_kids_20261031_090000.db"
+    corrupted_backup = backup_directory / "church_city_kids_20261101_090000.db"
 
     with sqlite3.connect(valid_backup) as connection:
         connection.execute(
@@ -449,9 +415,7 @@ def test_prune_old_backups_preserves_valid_backup_when_newest_is_corrupted(
     assert corrupted_backup.exists()
 
     with sqlite3.connect(valid_backup) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
     assert records == [("Maria",)]
 
@@ -496,11 +460,10 @@ def test_run_scheduled_backup_creates_backup_and_applies_retention(
     assert second_backup.is_file()
 
     with sqlite3.connect(second_backup) as connection:
-        records = connection.execute(
-            "SELECT name FROM children"
-        ).fetchall()
+        records = connection.execute("SELECT name FROM children").fetchall()
 
     assert records == [("Maria",)]
+
 
 def test_scheduled_backup_failure_preserves_existing_backups(
     tmp_path,
@@ -522,9 +485,7 @@ def test_scheduled_backup_failure_preserves_existing_backups(
 
     for backup_path in existing_backups:
         with sqlite3.connect(backup_path) as connection:
-            connection.execute(
-                "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-            )
+            connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
             connection.commit()
 
     with pytest.raises(FileNotFoundError):
@@ -547,9 +508,7 @@ def test_timestamped_backup_uses_unique_name_on_collision(
     timestamp = datetime(2026, 11, 2, 12, 0, 0)
 
     with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-        )
+        connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
 
     first_backup = create_timestamped_backup(
         source_path=database_path,
@@ -582,9 +541,7 @@ def test_prune_old_backups_includes_collision_suffixes(
 
     for backup_path in (oldest, middle, newest):
         with sqlite3.connect(backup_path) as connection:
-            connection.execute(
-                "CREATE TABLE children (id INTEGER PRIMARY KEY)"
-            )
+            connection.execute("CREATE TABLE children (id INTEGER PRIMARY KEY)")
 
     prune_old_backups(
         backup_directory=backup_directory,

@@ -5,6 +5,7 @@ Revises: 6ecddf4bd644
 Create Date: 2026-10-17 11:52:39.721936
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -13,8 +14,8 @@ from alembic import op
 from church_city_kids.domain.scheduling import normalize_room_name
 
 # revision identifiers, used by Alembic.
-revision: str = '843b7935f46a'
-down_revision: str | Sequence[str] | None = '6ecddf4bd644'
+revision: str = "843b7935f46a"
+down_revision: str | Sequence[str] | None = "6ecddf4bd644"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -23,9 +24,7 @@ def upgrade() -> None:
     connection = op.get_bind()
 
     # Validate existing data before changing the schema.
-    rooms = connection.execute(
-        sa.text("SELECT id, name FROM rooms")
-    ).all()
+    rooms = connection.execute(sa.text("SELECT id, name FROM rooms")).all()
 
     normalized_names: set[str] = set()
     updates: list[dict[str, str]] = []
@@ -35,8 +34,7 @@ def upgrade() -> None:
 
         if normalized_name in normalized_names:
             raise ValueError(
-                "Cannot migrate rooms: duplicate normalized "
-                f"name '{normalized_name}'"
+                f"Cannot migrate rooms: duplicate normalized name '{normalized_name}'"
             )
 
         normalized_names.add(normalized_name)

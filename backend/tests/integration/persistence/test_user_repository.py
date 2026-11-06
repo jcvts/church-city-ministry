@@ -14,9 +14,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
 def test_repository_finds_user_by_username_case_insensitively(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_repository.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_repository.db'}")
     Base.metadata.create_all(engine)
 
     user_id = uuid4()
@@ -48,9 +46,7 @@ def test_repository_finds_user_by_username_case_insensitively(
 
 
 def test_repository_returns_none_for_unknown_username(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'unknown_user_repository.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'unknown_user_repository.db'}")
     Base.metadata.create_all(engine)
 
     try:
@@ -67,9 +63,7 @@ def test_repository_returns_none_for_unknown_username(tmp_path) -> None:
 def test_repository_treats_username_wildcards_as_literals(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'username_wildcards.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'username_wildcards.db'}")
     Base.metadata.create_all(engine)
 
     try:
@@ -94,9 +88,7 @@ def test_repository_treats_username_wildcards_as_literals(
 
 
 def test_repository_adds_user(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_creation.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_creation.db'}")
     Base.metadata.create_all(engine)
 
     user = User(
@@ -122,9 +114,7 @@ def test_repository_adds_user(tmp_path) -> None:
 
 
 def test_repository_finds_user_by_id(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_lookup_by_id.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_lookup_by_id.db'}")
     Base.metadata.create_all(engine)
 
     user = User(
@@ -151,9 +141,7 @@ def test_repository_finds_user_by_id(tmp_path) -> None:
 
 
 def test_repository_returns_none_for_unknown_user_id(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'unknown_user_id.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'unknown_user_id.db'}")
     Base.metadata.create_all(engine)
 
     try:
@@ -168,9 +156,7 @@ def test_repository_returns_none_for_unknown_user_id(tmp_path) -> None:
 
 
 def test_repository_preserves_admin_role(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_admin_role.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_admin_role.db'}")
     Base.metadata.create_all(engine)
 
     user = User(
@@ -209,9 +195,7 @@ def test_create_user_persists_volunteer_with_hashed_password(
         PasswordHasher,
     )
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'create_volunteer.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'create_volunteer.db'}")
     Base.metadata.create_all(engine)
 
     password_hasher = PasswordHasher()
@@ -251,9 +235,7 @@ def test_create_user_persists_volunteer_with_hashed_password(
 
 
 def test_repository_updates_user_active_status(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_status_update.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_status_update.db'}")
     Base.metadata.create_all(engine)
 
     user_id = uuid4()
@@ -303,9 +285,7 @@ def test_update_user_status_persists_deactivation_and_reactivation(
         update_user_status,
     )
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_status_lifecycle.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_status_lifecycle.db'}")
     Base.metadata.create_all(engine)
 
     user_id = uuid4()
@@ -369,9 +349,7 @@ def test_update_user_status_persists_deactivation_and_reactivation(
 def test_repository_lists_all_users_ordered_by_username(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_listing.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_listing.db'}")
     Base.metadata.create_all(engine)
 
     try:
@@ -435,9 +413,7 @@ def test_repository_lists_all_users_ordered_by_username(
 def test_repository_lists_no_users_when_database_is_empty(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'empty_user_listing.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'empty_user_listing.db'}")
     Base.metadata.create_all(engine)
 
     try:
@@ -453,9 +429,7 @@ def test_repository_lists_no_users_when_database_is_empty(
 
 
 def test_repository_updates_only_user_password_hash(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'user_password_update.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'user_password_update.db'}")
     Base.metadata.create_all(engine)
 
     user_id = uuid4()
@@ -505,9 +479,7 @@ def test_change_password_persists_new_argon2_hash(tmp_path) -> None:
         PasswordHasher,
     )
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'change_password_integration.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'change_password_integration.db'}")
     Base.metadata.create_all(engine)
 
     hasher = PasswordHasher()

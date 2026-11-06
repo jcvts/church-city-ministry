@@ -11,9 +11,7 @@ def backup_sqlite_database(source_path: Path, backup_path: Path) -> None:
         raise FileNotFoundError(f"Database not found: {source_path}")
 
     if backup_path.exists():
-        raise FileExistsError(
-            f"Backup destination already exists: {backup_path}"
-        )
+        raise FileExistsError(f"Backup destination already exists: {backup_path}")
 
     backup_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -30,14 +28,10 @@ def backup_sqlite_database(source_path: Path, backup_path: Path) -> None:
             with sqlite3.connect(temporary_path) as destination:
                 source.backup(destination)
 
-                integrity = destination.execute(
-                    "PRAGMA integrity_check"
-                ).fetchone()
+                integrity = destination.execute("PRAGMA integrity_check").fetchone()
 
                 if integrity != ("ok",):
-                    raise sqlite3.DatabaseError(
-                        "Backup failed integrity check"
-                    )
+                    raise sqlite3.DatabaseError("Backup failed integrity check")
 
         # Create the final backup only if the destination does not exist.
         # Hard linking avoids replacing an existing file.
@@ -47,15 +41,12 @@ def backup_sqlite_database(source_path: Path, backup_path: Path) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-
 def restore_sqlite_database(backup_path: Path, restore_path: Path) -> None:
     if not backup_path.is_file():
         raise FileNotFoundError(f"Backup not found: {backup_path}")
 
     if restore_path.exists():
-        raise FileExistsError(
-            f"Restore destination already exists: {restore_path}"
-        )
+        raise FileExistsError(f"Restore destination already exists: {restore_path}")
 
     restore_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,9 +63,7 @@ def restore_sqlite_database(backup_path: Path, restore_path: Path) -> None:
             with sqlite3.connect(temporary_path) as destination:
                 source.backup(destination)
 
-                integrity = destination.execute(
-                    "PRAGMA integrity_check"
-                ).fetchone()
+                integrity = destination.execute("PRAGMA integrity_check").fetchone()
 
                 if integrity != ("ok",):
                     raise sqlite3.DatabaseError(
@@ -82,9 +71,7 @@ def restore_sqlite_database(backup_path: Path, restore_path: Path) -> None:
                     )
 
         if restore_path.exists():
-            raise FileExistsError(
-                f"Restore destination already exists: {restore_path}"
-            )
+            raise FileExistsError(f"Restore destination already exists: {restore_path}")
 
         temporary_path.rename(restore_path)
 
@@ -97,19 +84,12 @@ def create_timestamped_backup(
     backup_directory: Path,
     timestamp: datetime,
 ) -> Path:
-    base_name = (
-        f"{source_path.stem}_"
-        f"{timestamp.strftime('%Y%m%d_%H%M%S')}"
-    )
+    base_name = f"{source_path.stem}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
 
     suffix = 0
 
     while True:
-        filename = (
-            f"{base_name}.db"
-            if suffix == 0
-            else f"{base_name}_{suffix}.db"
-        )
+        filename = f"{base_name}.db" if suffix == 0 else f"{base_name}_{suffix}.db"
 
         backup_path = backup_directory / filename
 
@@ -133,9 +113,7 @@ def prune_old_backups(
     if not backup_directory.exists():
         return
 
-    pattern = re.compile(
-        rf"{re.escape(database_stem)}_(\d{{8}}_\d{{6}})(?:_\d+)?\.db"
-    )
+    pattern = re.compile(rf"{re.escape(database_stem)}_(\d{{8}}_\d{{6}})(?:_\d+)?\.db")
 
     backups = []
 
@@ -164,9 +142,7 @@ def prune_old_backups(
             with sqlite3.connect(
                 f"file:{path.resolve().as_posix()}?mode=ro", uri=True
             ) as connection:
-                integrity = connection.execute(
-                    "PRAGMA integrity_check"
-                ).fetchone()
+                integrity = connection.execute("PRAGMA integrity_check").fetchone()
 
                 if integrity != ("ok",):
                     continue
@@ -175,7 +151,6 @@ def prune_old_backups(
             continue
 
         backups.append((timestamp, path))
-
 
     backups.sort(key=lambda item: item[0], reverse=True)
 

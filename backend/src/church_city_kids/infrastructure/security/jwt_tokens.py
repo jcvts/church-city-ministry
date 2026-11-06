@@ -11,9 +11,7 @@ class JwtTokenService:
         access_token_ttl: timedelta,
     ) -> None:
         if len(secret_key.encode("utf-8")) < 32:
-            raise ValueError(
-                "JWT secret key must be at least 32 bytes"
-            )
+            raise ValueError("JWT secret key must be at least 32 bytes")
 
         if access_token_ttl <= timedelta(0):
             raise ValueError("Access token TTL must be positive")
@@ -36,7 +34,7 @@ class JwtTokenService:
             self._secret_key,
             algorithm="HS256",
         )
-    
+
     def decode_access_token(self, token: str) -> UUID:
         payload = jwt.decode(
             token,
@@ -48,6 +46,4 @@ class JwtTokenService:
         try:
             return UUID(payload["sub"])
         except (ValueError, TypeError, AttributeError) as exc:
-            raise jwt.InvalidTokenError(
-                "Invalid user identifier"
-            ) from exc
+            raise jwt.InvalidTokenError("Invalid user identifier") from exc

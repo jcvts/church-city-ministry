@@ -37,7 +37,6 @@ def main() -> None:
         help="Number of backups to retain (default: 30).",
     )
 
-
     args = parser.parse_args()
 
     database_path = args.database
@@ -53,10 +52,10 @@ def main() -> None:
 
     if not args.backup_dir.is_absolute():
         parser.error("--backup-dir must be an absolute path")
-    
+
     if args.keep_count < 1:
         parser.error("--keep-count must be at least 1")
-    
+
     try:
         backup_path = run_scheduled_backup(
             source_path=database_path,

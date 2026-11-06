@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -156,6 +157,12 @@ class SessionModel(Base):
             "room_id",
             name="uq_sessions_service_room",
         ),
+        Index(
+            "uq_sessions_id_service",
+            "id",
+            "service_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -181,17 +188,34 @@ class VolunteerAssignmentModel(Base):
             "volunteer_id",
             name="uq_volunteer_assignments_session_volunteer",
         ),
+        UniqueConstraint(
+            "service_id",
+            "volunteer_id",
+            name="uq_volunteer_assignments_service_volunteer",
+        ),
+        ForeignKeyConstraint(
+            ["session_id", "service_id"],
+            ["sessions.id", "sessions.service_id"],
+            name="fk_volunteer_assignments_session_service",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    session_id: Mapped[UUID] = mapped_column(
-        ForeignKey("sessions.id"),
+
+    service_id: Mapped[UUID] = mapped_column(
+        ForeignKey("services.id"),
         nullable=False,
     )
+
+    session_id: Mapped[UUID] = mapped_column(
+        nullable=False,
+    )
+
     volunteer_id: Mapped[UUID] = mapped_column(
         ForeignKey("volunteers.id"),
         nullable=False,
     )
+
     role: Mapped[str | None] = mapped_column(String, nullable=True)
 
 

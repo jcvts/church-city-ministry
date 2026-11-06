@@ -31,6 +31,8 @@ from church_city_kids.infrastructure.persistence.models import (
     ServiceModel,
     SessionModel,
     UserModel,
+    VolunteerAssignmentModel,
+    VolunteerModel,
 )
 from church_city_kids.infrastructure.persistence.repositories import (
     FamilyRepository,
@@ -176,11 +178,9 @@ def api_client(
 
     app.dependency_overrides[get_db_session] = override_get_db_session
 
-    app.dependency_overrides[get_jwt_token_service] = (
-        lambda: JwtTokenService(
-            secret_key="test-secret-key-with-at-least-32-bytes",
-            access_token_ttl=timedelta(minutes=30),
-        )
+    app.dependency_overrides[get_jwt_token_service] = lambda: JwtTokenService(
+        secret_key="test-secret-key-with-at-least-32-bytes",
+        access_token_ttl=timedelta(minutes=30),
     )
 
     try:
@@ -209,7 +209,7 @@ def test_register_child(
     client, verification_session = api_client
 
     verification_session.add(
-    MinistrySettingsModel(
+        MinistrySettingsModel(
             pager_required=True,
         )
     )
@@ -267,9 +267,7 @@ def test_list_children_returns_matching_children(
     family_id = uuid4()
     matching_child_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -342,7 +340,6 @@ def test_list_children_returns_empty_list_when_no_matches(
     assert response.json() == []
 
 
-
 def test_create_service_creates_sessions_for_active_rooms(
     api_client: tuple[TestClient, Session],
 ) -> None:
@@ -412,10 +409,7 @@ def test_create_service_creates_sessions_for_active_rooms(
 
     assert len(sessions) == 2
 
-    sessions_by_room = {
-        session.room_id: session
-        for session in sessions
-    }
+    sessions_by_room = {session.room_id: session for session in sessions}
 
     nursery_session = sessions_by_room[nursery_id]
     assert nursery_session.name == "Sala 1"
@@ -428,7 +422,6 @@ def test_create_service_creates_sessions_for_active_rooms(
     assert children_session.max_age_years == 11
 
     assert inactive_id not in sessions_by_room
-
 
 
 def test_create_room(
@@ -482,7 +475,7 @@ def test_list_rooms_returns_only_active_rooms(
                 normalized_name="sala desativada",
                 is_active=False,
             ),
-                    ]
+        ]
     )
     verification_session.commit()
 
@@ -637,7 +630,7 @@ def test_create_session_returns_409_when_room_is_inactive(
     headers = create_authenticated_headers(
         verification_session,
         role="admin",
-    )    
+    )
     service_id = uuid4()
     room_id = uuid4()
 
@@ -961,7 +954,7 @@ def test_check_in_child_returns_409_when_already_checked_in(
     assert first_response.status_code == 201
 
     second_response = client.post(
-        "/api/check-ins", 
+        "/api/check-ins",
         json=payload,
         headers=headers,
     )
@@ -1508,9 +1501,7 @@ def test_admin_settings_rejects_token_for_inactive_user(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == (
-        "Invalid or expired authentication token"
-    )
+    assert response.json()["detail"] == ("Invalid or expired authentication token")
 
 
 def test_admin_settings_rejects_invalid_jwt_signature(
@@ -1532,9 +1523,7 @@ def test_admin_settings_rejects_invalid_jwt_signature(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == (
-        "Invalid or expired authentication token"
-    )
+    assert response.json()["detail"] == ("Invalid or expired authentication token")
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
@@ -1572,9 +1561,7 @@ def test_admin_settings_rejects_expired_jwt(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == (
-        "Invalid or expired authentication token"
-    )
+    assert response.json()["detail"] == ("Invalid or expired authentication token")
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
@@ -1616,10 +1603,7 @@ def test_login_returns_access_token_for_valid_credentials(
         access_token_ttl=timedelta(minutes=30),
     )
 
-    assert (
-        token_service.decode_access_token(body["access_token"])
-        == user_id
-    )
+    assert token_service.decode_access_token(body["access_token"]) == user_id
 
 
 def test_login_rejects_incorrect_password(
@@ -1750,9 +1734,7 @@ def test_admin_settings_rejects_invalid_pager_required(
 ) -> None:
     client, verification_session = api_client
 
-    verification_session.add(
-        MinistrySettingsModel(id=1, pager_required=True)
-    )
+    verification_session.add(MinistrySettingsModel(id=1, pager_required=True))
 
     user_id = uuid4()
     verification_session.add(
@@ -1792,9 +1774,7 @@ def test_admin_settings_rolls_back_when_commit_fails(
 ) -> None:
     client, verification_session = api_client
 
-    verification_session.add(
-        MinistrySettingsModel(id=1, pager_required=True)
-    )
+    verification_session.add(MinistrySettingsModel(id=1, pager_required=True))
 
     user_id = uuid4()
     verification_session.add(
@@ -1838,9 +1818,7 @@ def test_check_in_requires_authentication(
 ) -> None:
     client, verification_session = api_client
 
-    child_id, session_id = create_check_in_scenario(
-        verification_session
-    )
+    child_id, session_id = create_check_in_scenario(verification_session)
     verification_session.commit()
 
     response = client.post(
@@ -1969,9 +1947,7 @@ def test_get_child_details_returns_child_and_guardians(
     child_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -2150,10 +2126,7 @@ def test_add_child_guardian_requires_authentication(
     )
 
     assert response.status_code == 401
-    assert (
-        verification_session.query(ChildGuardianModel).count()
-        == 0
-    )
+    assert verification_session.query(ChildGuardianModel).count() == 0
 
 
 def test_add_child_guardian_returns_409_for_duplicate_link(
@@ -2171,9 +2144,7 @@ def test_add_child_guardian_returns_409_for_duplicate_link(
     guardian_id = uuid4()
     existing_link_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -2223,9 +2194,7 @@ def test_add_child_guardian_returns_409_for_duplicate_link(
 
     verification_session.expire_all()
 
-    links = verification_session.scalars(
-        select(ChildGuardianModel)
-    ).all()
+    links = verification_session.scalars(select(ChildGuardianModel)).all()
 
     assert len(links) == 1
     assert links[0].id == existing_link_id
@@ -2258,9 +2227,12 @@ def test_add_child_guardian_returns_404_when_child_does_not_exist(
         "detail": "Child not found",
     }
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(ChildGuardianModel)
-    ) == 0
+    assert (
+        verification_session.scalar(
+            select(func.count()).select_from(ChildGuardianModel)
+        )
+        == 0
+    )
 
 
 def test_add_child_guardian_returns_404_when_guardian_does_not_exist(
@@ -2276,9 +2248,7 @@ def test_add_child_guardian_returns_404_when_guardian_does_not_exist(
     family_id = uuid4()
     child_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add(
@@ -2307,9 +2277,12 @@ def test_add_child_guardian_returns_404_when_guardian_does_not_exist(
         "detail": "Guardian not found",
     }
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(ChildGuardianModel)
-    ) == 0
+    assert (
+        verification_session.scalar(
+            select(func.count()).select_from(ChildGuardianModel)
+        )
+        == 0
+    )
 
 
 def test_add_child_guardian_defaults_to_unauthorized_pickup(
@@ -2326,9 +2299,7 @@ def test_add_child_guardian_defaults_to_unauthorized_pickup(
     child_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -2384,9 +2355,7 @@ def test_add_new_guardian_to_existing_child_via_api(
     family_id = uuid4()
     child_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add(
@@ -2432,13 +2401,13 @@ def test_add_new_guardian_to_existing_child_via_api(
     assert link.relationship == "Grandmother"
     assert link.authorized_pickup is False
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(FamilyModel)
-    ) == 1
+    assert (
+        verification_session.scalar(select(func.count()).select_from(FamilyModel)) == 1
+    )
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(ChildModel)
-    ) == 1
+    assert (
+        verification_session.scalar(select(func.count()).select_from(ChildModel)) == 1
+    )
 
 
 def test_add_child_guardian_rejects_ambiguous_input(
@@ -2455,9 +2424,7 @@ def test_add_child_guardian_rejects_ambiguous_input(
     child_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -2493,13 +2460,17 @@ def test_add_child_guardian_rejects_ambiguous_input(
 
     verification_session.expire_all()
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(ChildGuardianModel)
-    ) == 0
+    assert (
+        verification_session.scalar(
+            select(func.count()).select_from(ChildGuardianModel)
+        )
+        == 0
+    )
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(GuardianModel)
-    ) == 1
+    assert (
+        verification_session.scalar(select(func.count()).select_from(GuardianModel))
+        == 1
+    )
 
 
 def test_add_child_guardian_rejects_missing_guardian_input(
@@ -2523,13 +2494,17 @@ def test_add_child_guardian_rejects_missing_guardian_input(
 
     assert response.status_code == 422
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(GuardianModel)
-    ) == 0
+    assert (
+        verification_session.scalar(select(func.count()).select_from(GuardianModel))
+        == 0
+    )
 
-    assert verification_session.scalar(
-        select(func.count()).select_from(ChildGuardianModel)
-    ) == 0
+    assert (
+        verification_session.scalar(
+            select(func.count()).select_from(ChildGuardianModel)
+        )
+        == 0
+    )
 
 
 def test_update_child_guardian_pickup_authorization_via_api(
@@ -2547,9 +2522,7 @@ def test_update_child_guardian_pickup_authorization_via_api(
     guardian_id = uuid4()
     link_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -2619,9 +2592,7 @@ def test_update_child_guardian_clears_relationship_via_api(
     guardian_id = uuid4()
     link_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -3055,9 +3026,7 @@ def test_list_service_attendances_returns_present_children(
 
     checked_in_at = datetime(2026, 10, 25, 9, 10)
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -3330,9 +3299,7 @@ def test_get_family_details_returns_children_and_guardians(
     child_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -3422,9 +3389,7 @@ def test_get_family_details_returns_empty_members_for_empty_family(
 
     family_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.commit()
 
     response = client.get(
@@ -3453,9 +3418,7 @@ def test_list_guardians_returns_matching_guardians(
     family_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add_all(
@@ -3691,9 +3654,7 @@ def test_get_guardian_details_returns_empty_children_when_unlinked(
     family_id = uuid4()
     guardian_id = uuid4()
 
-    verification_session.add(
-        FamilyModel(id=family_id, is_active=True)
-    )
+    verification_session.add(FamilyModel(id=family_id, is_active=True))
     verification_session.flush()
 
     verification_session.add(
@@ -3831,10 +3792,7 @@ def test_update_child_returns_404_when_child_does_not_exist(
     assert response.status_code == 404
     assert response.json() == {"detail": "Child not found"}
 
-    assert (
-        verification_session.get(ChildModel, nonexistent_child_id)
-        is None
-    )
+    assert verification_session.get(ChildModel, nonexistent_child_id) is None
 
 
 @pytest.mark.parametrize(
@@ -4277,49 +4235,6 @@ def test_update_family_rejects_invalid_payload(
     assert saved_family.is_active is True
 
 
-def test_admin_can_create_volunteer(
-    api_client: tuple[TestClient, Session],
-) -> None:
-    client, session = api_client
-    headers = create_authenticated_headers(
-        session,
-        role="admin",
-    )
-
-    response = client.post(
-        "/api/users",
-        json={
-            "username": "volunteer.maria",
-            "password": "SecurePassword123!",
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 201
-
-    response_data = response.json()
-    user_id = UUID(response_data["id"])
-
-    assert response_data["username"] == "volunteer.maria"
-    assert response_data["role"] == "volunteer"
-    assert response_data["is_active"] is True
-    assert "password" not in response_data
-    assert "password_hash" not in response_data
-
-    session.expire_all()
-
-    saved_user = session.get(UserModel, user_id)
-
-    assert saved_user is not None
-    assert saved_user.username == "volunteer.maria"
-    assert saved_user.role == "volunteer"
-    assert saved_user.is_active is True
-    assert PasswordHasher().verify(
-        "SecurePassword123!",
-        saved_user.password_hash,
-    )
-
-
 def test_create_user_requires_authentication(
     api_client: tuple[TestClient, Session],
 ) -> None:
@@ -4335,9 +4250,7 @@ def test_create_user_requires_authentication(
 
     assert response.status_code == 401
 
-    saved_user = session.query(UserModel).filter_by(
-        username="volunteer.maria"
-    ).first()
+    saved_user = session.query(UserModel).filter_by(username="volunteer.maria").first()
 
     assert saved_user is None
 
@@ -4363,9 +4276,7 @@ def test_volunteer_cannot_create_user(
 
     assert response.status_code == 403
 
-    saved_user = session.query(UserModel).filter_by(
-        username="volunteer.maria"
-    ).first()
+    saved_user = session.query(UserModel).filter_by(username="volunteer.maria").first()
 
     assert saved_user is None
 
@@ -4406,9 +4317,7 @@ def test_create_user_rejects_duplicate_username(
     assert response.json()["detail"] == "Username already exists"
 
     users = session.scalars(
-        select(UserModel).where(
-            func.lower(UserModel.username) == "volunteer.maria"
-        )
+        select(UserModel).where(func.lower(UserModel.username) == "volunteer.maria")
     ).all()
 
     assert len(users) == 1
@@ -4461,9 +4370,7 @@ def test_create_user_rejects_invalid_input(
     assert response.json()["detail"] == expected_detail
 
     users = session.scalars(
-        select(UserModel).where(
-            UserModel.username == "volunteer.maria"
-        )
+        select(UserModel).where(UserModel.username == "volunteer.maria")
     ).all()
 
     assert users == []
@@ -4867,11 +4774,7 @@ def test_admin_can_list_users(
 
     assert isinstance(users, list)
 
-    volunteer = next(
-        user
-        for user in users
-        if user["id"] == str(volunteer_id)
-    )
+    volunteer = next(user for user in users if user["id"] == str(volunteer_id))
 
     assert volunteer["username"] == "volunteer.maria"
     assert volunteer["role"] == "volunteer"
@@ -4879,11 +4782,7 @@ def test_admin_can_list_users(
 
     assert any(user["role"] == "admin" for user in users)
 
-    assert all(
-        "password_hash" not in user
-        and "password" not in user
-        for user in users
-    )
+    assert all("password_hash" not in user and "password" not in user for user in users)
 
 
 def test_list_users_requires_authentication(
@@ -5141,8 +5040,7 @@ def test_change_own_password_requires_current_password(
 
     errors = response.json()["detail"]
     assert any(
-        error["loc"] == ["body", "current_password"]
-        and error["type"] == "missing"
+        error["loc"] == ["body", "current_password"] and error["type"] == "missing"
         for error in errors
     )
 
@@ -5478,9 +5376,7 @@ def test_get_admin_settings_returns_current_settings(
         role="admin",
     )
 
-    verification_session.add(
-        MinistrySettingsModel(pager_required=True)
-    )
+    verification_session.add(MinistrySettingsModel(pager_required=True))
     verification_session.commit()
 
     response = client.get(
@@ -5544,13 +5440,9 @@ def test_create_service_rejects_room_without_age_range(
     assert response.status_code == 409
     assert "age range" in response.json()["detail"]
 
-    services = verification_session.scalars(
-        select(ServiceModel)
-    ).all()
+    services = verification_session.scalars(select(ServiceModel)).all()
 
-    sessions = verification_session.scalars(
-        select(SessionModel)
-    ).all()
+    sessions = verification_session.scalars(select(SessionModel)).all()
 
     assert services == []
     assert sessions == []
@@ -5592,17 +5484,12 @@ def test_create_service_rolls_back_when_session_creation_fails(
 
     assert response.status_code == 500
 
-    services = verification_session.scalars(
-        select(ServiceModel)
-    ).all()
+    services = verification_session.scalars(select(ServiceModel)).all()
 
-    sessions = verification_session.scalars(
-        select(SessionModel)
-    ).all()
+    sessions = verification_session.scalars(select(SessionModel)).all()
 
     assert services == []
     assert sessions == []
-
 
 
 def test_update_room_via_api(
@@ -5895,3 +5782,708 @@ def test_update_room_does_not_modify_existing_sessions(
     assert existing_session.name == "Sala 1"
     assert existing_session.min_age_years == 3
     assert existing_session.max_age_years == 5
+
+
+def test_admin_can_create_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    initial_user_count = session.query(UserModel).count()
+
+    response = client.post(
+        "/api/volunteers",
+        json={"full_name": "  Maria Oliveira  "},
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+
+    response_data = response.json()
+
+    volunteer_id = UUID(response_data["id"])
+
+    assert response_data == {
+        "id": str(volunteer_id),
+        "full_name": "Maria Oliveira",
+        "is_active": True,
+    }
+
+    session.expire_all()
+
+    saved_volunteer = session.get(VolunteerModel, volunteer_id)
+
+    assert saved_volunteer is not None
+    assert saved_volunteer.full_name == "Maria Oliveira"
+    assert saved_volunteer.is_active is True
+
+    # Creating a volunteer must not create a user account.
+    assert session.query(UserModel).count() == initial_user_count
+
+
+def test_create_volunteer_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    response = client.post(
+        "/api/volunteers",
+        json={"full_name": "Maria Oliveira"},
+    )
+
+    assert response.status_code == 401
+    assert session.query(VolunteerModel).count() == 0
+
+
+def test_volunteer_cannot_create_another_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/volunteers",
+        json={"full_name": "Maria Oliveira"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert session.query(VolunteerModel).count() == 0
+
+
+@pytest.mark.parametrize(
+    "full_name",
+    ["", "   ", "\t", "\n"],
+)
+def test_create_volunteer_rejects_blank_name(
+    api_client: tuple[TestClient, Session],
+    full_name: str,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    response = client.post(
+        "/api/volunteers",
+        json={"full_name": full_name},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == ("Volunteer name cannot be blank")
+
+    assert session.query(VolunteerModel).count() == 0
+
+
+def test_list_volunteers_returns_empty_list(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    response = client.get(
+        "/api/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_admin_can_list_volunteers(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="admin",
+    )
+
+    volunteer_a = VolunteerModel(
+        id=uuid4(),
+        full_name="Carlos Santos",
+        is_active=True,
+    )
+    volunteer_b = VolunteerModel(
+        id=uuid4(),
+        full_name="Ana Oliveira",
+        is_active=True,
+    )
+    volunteer_c = VolunteerModel(
+        id=uuid4(),
+        full_name="Bruno Silva",
+        is_active=False,
+    )
+
+    session.add_all([volunteer_a, volunteer_b, volunteer_c])
+    session.commit()
+
+    response = client.get(
+        "/api/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert [item["full_name"] for item in data] == [
+        "Ana Oliveira",
+        "Bruno Silva",
+        "Carlos Santos",
+    ]
+
+    assert [item["is_active"] for item in data] == [
+        True,
+        False,
+        True,
+    ]
+
+    assert all(set(item.keys()) == {"id", "full_name", "is_active"} for item in data)
+
+
+def test_volunteer_can_list_volunteers(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+
+    session.add(volunteer)
+    session.commit()
+
+    response = client.get(
+        "/api/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["full_name"] == "Maria Oliveira"
+
+
+def test_list_volunteers_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    response = client.get("/api/volunteers")
+
+    assert response.status_code == 401
+    assert session.query(VolunteerModel).count() == 0
+
+
+def test_admin_can_update_volunteer_name(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": "Maria Santos"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "updated"}
+
+    session.expire_all()
+    updated = session.get(VolunteerModel, volunteer.id)
+
+    assert updated is not None
+    assert updated.full_name == "Maria Santos"
+    assert updated.is_active is True
+
+
+def test_update_volunteer_strips_name_whitespace(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": "  Maria Santos  "},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    session.expire_all()
+    updated = session.get(VolunteerModel, volunteer.id)
+
+    assert updated is not None
+    assert updated.full_name == "Maria Santos"
+
+
+@pytest.mark.parametrize(
+    "full_name",
+    ["", "   ", "\t", "\n", None],
+)
+def test_update_volunteer_rejects_blank_name(
+    api_client: tuple[TestClient, Session],
+    full_name: str | None,
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": full_name},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+    unchanged = session.get(VolunteerModel, volunteer.id)
+
+    assert unchanged is not None
+    assert unchanged.full_name == "Maria Oliveira"
+
+
+def test_update_volunteer_rejects_empty_request(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    session.expire_all()
+    unchanged = session.get(VolunteerModel, volunteer.id)
+
+    assert unchanged is not None
+    assert unchanged.full_name == "Maria Oliveira"
+
+
+def test_update_volunteer_returns_404_for_unknown_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    response = client.patch(
+        f"/api/volunteers/{uuid4()}",
+        json={"full_name": "Maria Santos"},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Volunteer not found"
+
+
+def test_update_volunteer_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": "Maria Santos"},
+    )
+
+    assert response.status_code == 401
+
+    session.expire_all()
+    unchanged = session.get(VolunteerModel, volunteer.id)
+
+    assert unchanged is not None
+    assert unchanged.full_name == "Maria Oliveira"
+
+
+def test_volunteer_cannot_update_another_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(
+        session,
+        role="volunteer",
+    )
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=True,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": "Maria Santos"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+    session.expire_all()
+    unchanged = session.get(VolunteerModel, volunteer.id)
+
+    assert unchanged is not None
+    assert unchanged.full_name == "Maria Oliveira"
+
+
+def test_update_inactive_volunteer_preserves_inactive_status(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, session = api_client
+
+    headers = create_authenticated_headers(session, role="admin")
+
+    volunteer = VolunteerModel(
+        id=uuid4(),
+        full_name="Maria Oliveira",
+        is_active=False,
+    )
+    session.add(volunteer)
+    session.commit()
+
+    response = client.patch(
+        f"/api/volunteers/{volunteer.id}",
+        json={"full_name": "Maria Santos"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    session.expire_all()
+    updated = session.get(VolunteerModel, volunteer.id)
+
+    assert updated is not None
+    assert updated.full_name == "Maria Santos"
+    assert updated.is_active is False
+
+
+def create_volunteer_assignment_scenario(
+    db: Session,
+    *,
+    volunteer_active: bool = True,
+) -> tuple[UUID, UUID, UUID]:
+    service_id = uuid4()
+    room_id = uuid4()
+    session_id = uuid4()
+    volunteer_id = uuid4()
+
+    db.add_all(
+        [
+            ServiceModel(
+                id=service_id,
+                name="Sunday Service",
+                starts_at=datetime(2026, 11, 8, 10, 0),
+                ends_at=None,
+            ),
+            RoomModel(
+                id=room_id,
+                name="Sala Infantil",
+                is_active=True,
+            ),
+            VolunteerModel(
+                id=volunteer_id,
+                full_name="Maria Oliveira",
+                is_active=volunteer_active,
+            ),
+        ]
+    )
+    db.flush()
+
+    db.add(
+        SessionModel(
+            id=session_id,
+            service_id=service_id,
+            room_id=room_id,
+            name="Infantil 3-5",
+            min_age_years=3,
+            max_age_years=5,
+            status="scheduled",
+        )
+    )
+    db.commit()
+
+    return service_id, session_id, volunteer_id
+
+
+def test_assign_volunteer_creates_assignment_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    service_id, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={
+            "volunteer_id": str(volunteer_id),
+            "role": "Teacher",
+        },
+    )
+
+    assert response.status_code == 201
+
+    assignment_id = UUID(response.json()["assignment_id"])
+    assignment = db.get(VolunteerAssignmentModel, assignment_id)
+
+    assert assignment is not None
+    assert assignment.service_id == service_id
+    assert assignment.session_id == session_id
+    assert assignment.volunteer_id == volunteer_id
+    assert assignment.role == "Teacher"
+
+
+def test_assign_volunteer_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    _, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        json={"volunteer_id": str(volunteer_id)},
+    )
+
+    assert response.status_code == 401
+    assert db.query(VolunteerAssignmentModel).count() == 0
+
+
+def test_assign_volunteer_returns_404_for_unknown_session(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+
+    response = client.post(
+        f"/api/sessions/{uuid4()}/volunteers",
+        headers=headers,
+        json={"volunteer_id": str(uuid4())},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Session not found"}
+    assert db.query(VolunteerAssignmentModel).count() == 0
+
+
+def test_assign_volunteer_returns_404_for_unknown_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    _, session_id, _ = create_volunteer_assignment_scenario(db)
+
+    response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={"volunteer_id": str(uuid4())},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Volunteer not found"}
+    assert db.query(VolunteerAssignmentModel).count() == 0
+
+
+def test_assign_volunteer_returns_409_for_inactive_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    _, session_id, volunteer_id = create_volunteer_assignment_scenario(
+        db,
+        volunteer_active=False,
+    )
+
+    response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={"volunteer_id": str(volunteer_id)},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Volunteer is inactive"}
+    assert db.query(VolunteerAssignmentModel).count() == 0
+
+
+def test_assign_volunteer_returns_409_for_duplicate(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    _, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    url = f"/api/sessions/{session_id}/volunteers"
+    payload = {"volunteer_id": str(volunteer_id)}
+
+    first_response = client.post(
+        url,
+        headers=headers,
+        json=payload,
+    )
+    second_response = client.post(
+        url,
+        headers=headers,
+        json=payload,
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "detail": "Volunteer already assigned to this service"
+    }
+    assert db.query(VolunteerAssignmentModel).count() == 1
+
+
+def test_list_service_volunteers_returns_assignments(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    service_id, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    create_response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={
+            "volunteer_id": str(volunteer_id),
+            "role": "Teacher",
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get(
+        f"/api/services/{service_id}/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "assignment_id": create_response.json()["assignment_id"],
+            "service_id": str(service_id),
+            "session_id": str(session_id),
+            "volunteer_id": str(volunteer_id),
+            "volunteer_name": "Maria Oliveira",
+            "role": "Teacher",
+        }
+    ]
+
+
+def test_list_service_volunteers_returns_empty_list(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    service_id, _, _ = create_volunteer_assignment_scenario(db)
+
+    response = client.get(
+        f"/api/services/{service_id}/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_service_volunteers_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    service_id, _, _ = create_volunteer_assignment_scenario(db)
+
+    response = client.get(
+        f"/api/services/{service_id}/volunteers",
+    )
+
+    assert response.status_code == 401
+
+
+def test_list_service_volunteers_returns_404_for_unknown_service(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+
+    response = client.get(
+        f"/api/services/{uuid4()}/volunteers",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Service not found"}

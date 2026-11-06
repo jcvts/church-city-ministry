@@ -34,7 +34,7 @@ class AutomaticBackupManager:
         self._thread: Thread | None = None
         self._interval_seconds = 60.0
         self.last_error: str | None = None
-    
+
     def _run_worker(
         self,
         stop_event: Event,
@@ -83,9 +83,7 @@ class AutomaticBackupManager:
                     f"file:{backup_path.resolve().as_posix()}?mode=ro",
                     uri=True,
                 ) as connection:
-                    integrity = connection.execute(
-                        "PRAGMA integrity_check"
-                    ).fetchone()
+                    integrity = connection.execute("PRAGMA integrity_check").fetchone()
 
                     if integrity == ("ok",):
                         return True

@@ -59,7 +59,6 @@ class CreateRoomBody(BaseModel):
     max_age_years: int | None = None
 
 
-
 class UpdateRoomBody(BaseModel):
     name: str | None = None
     min_age_years: int | None = None
@@ -142,6 +141,22 @@ class ListUserResponse(BaseModel):
     is_active: bool
 
 
+class CreateVolunteerBody(BaseModel):
+    full_name: str
+
+
+class CreateVolunteerResponse(BaseModel):
+    id: UUID
+    full_name: str
+    is_active: bool
+
+
+class ListVolunteerResponse(BaseModel):
+    id: UUID
+    full_name: str
+    is_active: bool
+
+
 class CheckInBody(BaseModel):
     child_id: UUID
     session_id: UUID
@@ -189,14 +204,10 @@ class AddChildGuardianBody(BaseModel):
         has_full_name = bool(self.full_name and self.full_name.strip())
 
         if has_guardian_id == has_full_name:
-            raise ValueError(
-                "Provide either guardian_id or full_name, but not both"
-            )
+            raise ValueError("Provide either guardian_id or full_name, but not both")
 
         if has_guardian_id and self.phone is not None:
-            raise ValueError(
-                "Phone can only be provided for a new guardian"
-            )
+            raise ValueError("Phone can only be provided for a new guardian")
 
         return self
 
@@ -212,17 +223,13 @@ class UpdateChildGuardianBody(BaseModel):
     @model_validator(mode="after")
     def validate_patch(self) -> "UpdateChildGuardianBody":
         if not self.model_fields_set:
-            raise ValueError(
-                "At least one field must be provided"
-            )
+            raise ValueError("At least one field must be provided")
 
         if (
             "authorized_pickup" in self.model_fields_set
             and self.authorized_pickup is None
         ):
-            raise ValueError(
-                "authorized_pickup cannot be null"
-            )
+            raise ValueError("authorized_pickup cannot be null")
 
         return self
 
@@ -240,10 +247,7 @@ class UpdateChildBody(BaseModel):
             if self.full_name is None or not self.full_name.strip():
                 raise ValueError("Child name cannot be blank")
 
-        if (
-            "birth_date" in self.model_fields_set
-            and self.birth_date is None
-        ):
+        if "birth_date" in self.model_fields_set and self.birth_date is None:
             raise ValueError("Birth date cannot be null")
 
         return self
@@ -267,3 +271,36 @@ class UpdateGuardianBody(BaseModel):
 
 class UpdateFamilyBody(BaseModel):
     is_active: bool
+
+
+class UpdateVolunteerBody(BaseModel):
+    full_name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> "UpdateVolunteerBody":
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+
+        if "full_name" in self.model_fields_set:
+            if self.full_name is None or not self.full_name.strip():
+                raise ValueError("Volunteer name cannot be blank")
+
+        return self
+
+
+class AssignVolunteerBody(BaseModel):
+    volunteer_id: UUID
+    role: str | None = None
+
+
+class AssignVolunteerResponse(BaseModel):
+    assignment_id: UUID
+
+
+class ListVolunteerAssignmentResponse(BaseModel):
+    assignment_id: UUID
+    service_id: UUID
+    session_id: UUID
+    volunteer_id: UUID
+    volunteer_name: str
+    role: str | None

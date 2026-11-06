@@ -26,9 +26,7 @@ def test_ministry_settings_are_persisted(tmp_path) -> None:
 
     with Session(engine) as session:
         settings = session.scalar(
-            select(MinistrySettingsModel).where(
-                MinistrySettingsModel.id == 1
-            )
+            select(MinistrySettingsModel).where(MinistrySettingsModel.id == 1)
         )
 
         assert settings is not None

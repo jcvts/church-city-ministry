@@ -9,6 +9,7 @@ from church_city_kids.domain.errors import (
     RoomAlreadyAssignedInServiceError,
     RoomInactiveError,
     VolunteerAlreadyAssignedInServiceError,
+    VolunteerInactiveError,
 )
 from church_city_kids.domain.people import Volunteer
 
@@ -77,6 +78,7 @@ class Session:
 
 @dataclass
 class VolunteerAssignment:
+    service_id: UUID
     session_id: UUID
     volunteer_id: UUID
     id: UUID = field(default_factory=uuid4)
@@ -121,15 +123,22 @@ def assign_volunteer(
     *,
     role: str | None = None,
 ) -> VolunteerAssignment:
+    if not volunteer.is_active:
+        raise VolunteerInactiveError()
+
     for assignment in assignments_in_service:
         if assignment.volunteer_id == volunteer.id:
             raise VolunteerAlreadyAssignedInServiceError()
+
     assignment = VolunteerAssignment(
+        service_id=session.service_id,
         session_id=session.id,
         volunteer_id=volunteer.id,
         role=role,
     )
+
     assignments_in_service.append(assignment)
+
     return assignment
 
 

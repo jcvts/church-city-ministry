@@ -39,8 +39,7 @@ def upgrade() -> None:
 
     if duplicate_families:
         raise RuntimeError(
-            "Active pager assignment conflicts detected. "
-            "Resolve them before migrating."
+            "Active pager assignment conflicts detected. Resolve them before migrating."
         )
     # Add nullable columns temporarily to support data migration.
     with op.batch_alter_table("pager_assignments") as batch_op:
@@ -114,8 +113,7 @@ def upgrade() -> None:
 
     if duplicate_pagers or duplicate_families:
         raise RuntimeError(
-            "Active pager assignment conflicts detected. "
-            "Resolve them before migrating."
+            "Active pager assignment conflicts detected. Resolve them before migrating."
         )
 
     # Rebuild the SQLite table with the new required columns and foreign keys.

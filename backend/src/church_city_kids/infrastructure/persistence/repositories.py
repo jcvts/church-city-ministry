@@ -5,6 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from church_city_kids.application.add_child_guardian import AddChildGuardianRepository
+from church_city_kids.application.assign_volunteer import (
+    AssignVolunteerRepository,
+)
 from church_city_kids.application.check_in import CheckInRepository
 from church_city_kids.application.check_out import CheckOutRepository
 from church_city_kids.application.create_room import CreateRoomRepository
@@ -28,6 +31,10 @@ from church_city_kids.application.list_rooms import ListRoomsRepository
 from church_city_kids.application.list_service_attendances import (
     ServiceAttendanceItem,
 )
+from church_city_kids.application.list_volunteer_assignments import (
+    ListVolunteerAssignmentsRepository,
+    VolunteerAssignmentItem,
+)
 from church_city_kids.application.registration import RegistrationRepository
 from church_city_kids.application.update_room import UpdateRoomRepository
 from church_city_kids.domain.attendance import Attendance
@@ -36,11 +43,13 @@ from church_city_kids.domain.people import (
     ChildGuardian,
     Family,
     Guardian,
+    Volunteer,
 )
 from church_city_kids.domain.scheduling import (
     Room,
     Service,
     SessionStatus,
+    VolunteerAssignment,
     normalize_room_name,
 )
 from church_city_kids.domain.scheduling import Session as DomainSession
@@ -57,6 +66,8 @@ from church_city_kids.infrastructure.persistence.models import (
     ServiceModel,
     SessionModel,
     UserModel,
+    VolunteerAssignmentModel,
+    VolunteerModel,
 )
 
 
@@ -104,7 +115,6 @@ class SqlAlchemyUpdateChildRepository:
 
         model.full_name = child.full_name
         model.birth_date = child.birth_date
-
 
 
 class SqlAlchemyUpdateRoomRepository(UpdateRoomRepository):
@@ -288,20 +298,14 @@ class SqlAlchemyListFamiliesRepository(ListFamiliesRepository):
     def search_active_families(self, name: str) -> list[Family]:
         normalized_name = name.strip().lower()
 
-        matching_children = (
-            select(ChildModel.family_id)
-            .where(
-                ChildModel.is_active.is_(True),
-                func.lower(ChildModel.full_name).contains(normalized_name),
-            )
+        matching_children = select(ChildModel.family_id).where(
+            ChildModel.is_active.is_(True),
+            func.lower(ChildModel.full_name).contains(normalized_name),
         )
 
-        matching_guardians = (
-            select(GuardianModel.family_id)
-            .where(
-                GuardianModel.is_active.is_(True),
-                func.lower(GuardianModel.full_name).contains(normalized_name),
-            )
+        matching_guardians = select(GuardianModel.family_id).where(
+            GuardianModel.is_active.is_(True),
+            func.lower(GuardianModel.full_name).contains(normalized_name),
         )
 
         statement = (
@@ -325,7 +329,6 @@ class SqlAlchemyListFamiliesRepository(ListFamiliesRepository):
             )
             for model in models
         ]
-
 
 
 class GuardianRepository:
@@ -559,7 +562,7 @@ class SqlAlchemyAddChildGuardianRepository(AddChildGuardianRepository):
 
     def add_child_guardian(self, link: ChildGuardian) -> None:
         ChildGuardianRepository(self._session).add(link)
-    
+
     def add_guardian(self, guardian: Guardian) -> None:
         GuardianRepository(self._session).add(guardian)
 
@@ -904,7 +907,6 @@ class SqlAlchemyMinistrySettingsRepository:
             pager_required=model.pager_required,
         )
 
-
     def save(self, settings: MinistrySettings) -> None:
         model = self._session.get(MinistrySettingsModel, 1)
 
@@ -929,7 +931,7 @@ class SqlAlchemyUserRepository:
             return None
 
         return self._to_domain(model)
-    
+
     def get_by_id(self, user_id: UUID) -> User | None:
         model = self._session.get(UserModel, user_id)
 
@@ -948,7 +950,7 @@ class SqlAlchemyUserRepository:
                 role=user.role,
             )
         )
-    
+
     def update(self, user: User) -> None:
         model = self._session.get(UserModel, user.id)
 
@@ -956,7 +958,7 @@ class SqlAlchemyUserRepository:
             raise ValueError("User not found")
 
         model.is_active = user.is_active
-    
+
     def update_password_hash(
         self,
         user_id: UUID,
@@ -984,18 +986,62 @@ class SqlAlchemyUserRepository:
             is_active=model.is_active,
             role=cast(UserRole, role),
         )
-    
+
     def list_all(self) -> list[User]:
-        statement = select(UserModel).order_by(
-            UserModel.username.asc()
+        statement = select(UserModel).order_by(UserModel.username.asc())
+
+        models = self._session.scalars(statement).all()
+
+        return [self._to_domain(model) for model in models]
+
+
+class SqlAlchemyVolunteerRepository:
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def add(self, volunteer: Volunteer) -> None:
+        self._session.add(
+            VolunteerModel(
+                id=volunteer.id,
+                full_name=volunteer.full_name,
+                is_active=volunteer.is_active,
+            )
+        )
+
+    def get_by_id(self, volunteer_id: UUID) -> Volunteer | None:
+        model = self._session.get(VolunteerModel, volunteer_id)
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
+    def list_all(self) -> list[Volunteer]:
+        statement = select(VolunteerModel).order_by(
+            VolunteerModel.full_name.asc(),
+            VolunteerModel.id.asc(),
         )
 
         models = self._session.scalars(statement).all()
 
-        return [
-            self._to_domain(model)
-            for model in models
-        ]
+        return [self._to_domain(model) for model in models]
+
+    def update(self, volunteer: Volunteer) -> None:
+        model = self._session.get(VolunteerModel, volunteer.id)
+
+        if model is None:
+            raise ValueError("Volunteer not found")
+
+        model.full_name = volunteer.full_name
+        model.is_active = volunteer.is_active
+
+    @staticmethod
+    def _to_domain(model: VolunteerModel) -> Volunteer:
+        return Volunteer(
+            id=model.id,
+            full_name=model.full_name,
+            is_active=model.is_active,
+        )
 
 
 class SqlAlchemyUpdateChildGuardianRepository:
@@ -1104,8 +1150,7 @@ class SqlAlchemyChildAttendanceHistoryRepository:
             )
             .outerjoin(
                 GuardianModel,
-                AttendanceModel.checked_out_by_guardian_id
-                == GuardianModel.id,
+                AttendanceModel.checked_out_by_guardian_id == GuardianModel.id,
             )
             .where(AttendanceModel.child_id == child_id)
             .order_by(
@@ -1190,4 +1235,105 @@ class SqlAlchemyServiceAttendanceRepository:
                 checked_out_at=attendance.checked_out_at,
             )
             for attendance, child_name, room_id, room_name in rows
+        ]
+
+
+class SqlAlchemyAssignVolunteerRepository(AssignVolunteerRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_session(self, session_id: UUID) -> DomainSession | None:
+        model = self._session.get(SessionModel, session_id)
+
+        if model is None:
+            return None
+
+        return DomainSession(
+            id=model.id,
+            service_id=model.service_id,
+            room_id=model.room_id,
+            name=model.name,
+            min_age_years=model.min_age_years,
+            max_age_years=model.max_age_years,
+            status=SessionStatus(model.status.lower()),
+        )
+
+    def get_volunteer(self, volunteer_id: UUID) -> Volunteer | None:
+        return SqlAlchemyVolunteerRepository(self._session).get_by_id(volunteer_id)
+
+    def get_assignments_for_service(
+        self,
+        service_id: UUID,
+    ) -> list[VolunteerAssignment]:
+        statement = (
+            select(VolunteerAssignmentModel)
+            .where(VolunteerAssignmentModel.service_id == service_id)
+            .order_by(VolunteerAssignmentModel.id)
+        )
+
+        models = self._session.scalars(statement).all()
+
+        return [
+            VolunteerAssignment(
+                id=model.id,
+                service_id=model.service_id,
+                session_id=model.session_id,
+                volunteer_id=model.volunteer_id,
+                role=model.role,
+            )
+            for model in models
+        ]
+
+    def add_assignment(
+        self,
+        assignment: VolunteerAssignment,
+    ) -> None:
+        self._session.add(
+            VolunteerAssignmentModel(
+                id=assignment.id,
+                service_id=assignment.service_id,
+                session_id=assignment.session_id,
+                volunteer_id=assignment.volunteer_id,
+                role=assignment.role,
+            )
+        )
+
+
+class SqlAlchemyListVolunteerAssignmentsRepository(ListVolunteerAssignmentsRepository):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def service_exists(self, service_id: UUID) -> bool:
+        return self._session.get(ServiceModel, service_id) is not None
+
+    def list_for_service(
+        self,
+        service_id: UUID,
+    ) -> list[VolunteerAssignmentItem]:
+        statement = (
+            select(VolunteerAssignmentModel, VolunteerModel.full_name)
+            .join(
+                VolunteerModel,
+                VolunteerAssignmentModel.volunteer_id == VolunteerModel.id,
+            )
+            .where(VolunteerAssignmentModel.service_id == service_id)
+            .order_by(
+                VolunteerAssignmentModel.session_id,
+                VolunteerModel.full_name,
+                VolunteerAssignmentModel.id,
+            )
+        )
+
+        rows = self._session.execute(statement).all()
+
+        return [
+            VolunteerAssignmentItem(
+                assignment_id=assignment.id,
+                service_id=assignment.service_id,
+                session_id=assignment.session_id,
+                volunteer_id=assignment.volunteer_id,
+                volunteer_name=volunteer_name,
+                role=assignment.role,
+            )
+            for assignment, volunteer_name in rows
         ]

@@ -101,3 +101,8 @@ class CheckOutBeforeCheckInError(DomainError):
 class GuardianNotAuthorizedForPickupError(DomainError):
     def __init__(self) -> None:
         super().__init__("Guardian is not authorized to pick up this child.")
+
+
+class VolunteerInactiveError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("Volunteer is inactive.")

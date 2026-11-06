@@ -351,9 +351,7 @@ def test_create_session_rejects_duplicate_room_in_same_service(
 
     with DbSession(engine) as verification_session:
         sessions = verification_session.scalars(
-            select(SessionModel).where(
-                SessionModel.service_id == service_id
-            )
+            select(SessionModel).where(SessionModel.service_id == service_id)
         ).all()
 
         assert len(sessions) == 1

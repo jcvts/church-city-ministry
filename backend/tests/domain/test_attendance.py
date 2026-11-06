@@ -36,9 +36,7 @@ def _check_in_age(
     session = make_open_session(
         service, make_room(), min_age_years=min_age, max_age_years=max_age
     )
-    return check_in(
-        child, family, session, service, [], occurred_at=service_date
-    )
+    return check_in(child, family, session, service, [], occurred_at=service_date)
 
 
 def test_age_five_fits_three_to_five_not_six_to_eleven() -> None:
@@ -126,9 +124,7 @@ def test_check_in_after_checkout_preserves_history() -> None:
     child = make_child(family, birth_date=date(2021, 1, 1))
     service = make_service()
     session = make_open_session(service, make_room())
-    first = check_in(
-        child, family, session, service, [], datetime(2026, 9, 20, 9, 50)
-    )
+    first = check_in(child, family, session, service, [], datetime(2026, 9, 20, 9, 50))
     check_out(first, datetime(2026, 9, 20, 11, 0))
 
     second = check_in(
@@ -165,9 +161,7 @@ def test_check_in_rejected_when_session_not_open(status: SessionStatus) -> None:
     family = make_family()
     child = make_child(family, birth_date=date(2021, 1, 1))
     service = make_service()
-    session = create_session(
-        service, make_room(), "Kids 3-5", 3, 5, [], status=status
-    )
+    session = create_session(service, make_room(), "Kids 3-5", 3, 5, [], status=status)
     with pytest.raises(SessionNotOpenError):
         check_in(child, family, session, service, [], datetime(2026, 9, 20, 9, 50))
 

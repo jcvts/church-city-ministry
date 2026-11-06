@@ -16,9 +16,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
 
 
 def test_repository_loads_ministry_settings(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'settings_repository.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings_repository.db'}")
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
@@ -42,9 +40,7 @@ def test_repository_loads_ministry_settings(tmp_path) -> None:
 
 
 def test_repository_updates_ministry_settings(tmp_path) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'settings_update.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings_update.db'}")
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
@@ -59,9 +55,7 @@ def test_repository_updates_ministry_settings(tmp_path) -> None:
     with Session(engine) as session:
         repository = SqlAlchemyMinistrySettingsRepository(session)
 
-        repository.save(
-            MinistrySettings(pager_required=False)
-        )
+        repository.save(MinistrySettings(pager_required=False))
         session.commit()
 
     with Session(engine) as session:
@@ -77,9 +71,7 @@ def test_repository_updates_ministry_settings(tmp_path) -> None:
 def test_update_ministry_settings_persists_through_repository(
     tmp_path,
 ) -> None:
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'settings_use_case.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings_use_case.db'}")
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:

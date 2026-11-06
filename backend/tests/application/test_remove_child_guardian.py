@@ -23,8 +23,7 @@ class FakeRemoveChildGuardianRepository:
             (
                 link
                 for link in self.links
-                if link.child_id == child_id
-                and link.guardian_id == guardian_id
+                if link.child_id == child_id and link.guardian_id == guardian_id
             ),
             None,
         )
@@ -50,9 +49,7 @@ def test_remove_existing_child_guardian() -> None:
         authorized_pickup=True,
     )
 
-    repository = FakeRemoveChildGuardianRepository(
-        [first_link, second_link]
-    )
+    repository = FakeRemoveChildGuardianRepository([first_link, second_link])
 
     remove_child_guardian(
         RemoveChildGuardianRequest(
@@ -77,9 +74,7 @@ def test_remove_child_guardian_rejects_nonexistent_link() -> None:
         authorized_pickup=True,
     )
 
-    repository = FakeRemoveChildGuardianRepository(
-        [existing_link]
-    )
+    repository = FakeRemoveChildGuardianRepository([existing_link])
 
     with pytest.raises(ChildGuardianNotFoundError):
         remove_child_guardian(

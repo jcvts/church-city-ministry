@@ -57,9 +57,7 @@ def test_get_database_path_uses_home_directory_by_default(
     monkeypatch.delenv("PROGRAMDATA", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    expected_path = (
-        tmp_path / ".church_city_kids" / "church_city_kids.db"
-    )
+    expected_path = tmp_path / ".church_city_kids" / "church_city_kids.db"
 
     assert get_database_path() == expected_path
     assert get_database_path().is_absolute()

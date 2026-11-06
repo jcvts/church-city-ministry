@@ -58,9 +58,7 @@ def require_bearer_token(
     )
 
     try:
-        user_id = token_service.decode_access_token(
-            credentials.credentials
-        )
+        user_id = token_service.decode_access_token(credentials.credentials)
     except jwt.InvalidTokenError:
         raise unauthorized from None
 

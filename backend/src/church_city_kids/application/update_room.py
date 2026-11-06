@@ -75,11 +75,7 @@ def update_room(
     if room is None:
         raise RoomNotFoundError()
 
-    new_name = (
-        request.name.strip()
-        if isinstance(request.name, str)
-        else room.name
-    )
+    new_name = request.name.strip() if isinstance(request.name, str) else room.name
 
     if isinstance(request.min_age_years, _UnsetType):
         new_min_age = room.min_age_years

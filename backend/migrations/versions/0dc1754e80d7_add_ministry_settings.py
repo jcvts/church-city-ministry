@@ -5,6 +5,7 @@ Revises: 784f187df975
 Create Date: 2026-10-22 22:45:23.763209
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -35,10 +36,7 @@ def upgrade() -> None:
     )
 
     op.execute(
-        sa.text(
-            "INSERT INTO ministry_settings (id, pager_required) "
-            "VALUES (1, 1)"
-        )
+        sa.text("INSERT INTO ministry_settings (id, pager_required) VALUES (1, 1)")
     )
 
 

@@ -18,11 +18,7 @@ class FakeAttendanceHistoryRepository:
         self,
         child_id: UUID,
     ) -> list[ChildAttendanceHistoryItem]:
-        return [
-            item
-            for item in self.items
-            if item.child_id == child_id
-        ]
+        return [item for item in self.items if item.child_id == child_id]
 
 
 def test_get_child_attendance_history_returns_newest_first() -> None:

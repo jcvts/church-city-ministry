@@ -32,9 +32,7 @@ class FakeCreateSessionRepository:
 
     def get_sessions_for_service(self, service_id: UUID) -> list[Session]:
         return [
-            session
-            for session in self.sessions
-            if session.service_id == service_id
+            session for session in self.sessions if session.service_id == service_id
         ]
 
     def add_session(self, session: Session) -> None:

@@ -583,9 +583,7 @@ def test_check_in_child_allows_check_in_after_previous_checkout(
         assert len(attendances) == 2
 
         assert attendances[0].id == previous_attendance_id
-        assert attendances[0].checked_out_at == datetime(
-            2026, 10, 4, 18, 40
-        )
+        assert attendances[0].checked_out_at == datetime(2026, 10, 4, 18, 40)
 
         assert attendances[1].id == result.attendance_id
         assert attendances[1].checked_in_at == second_check_in_at
@@ -1919,9 +1917,7 @@ def test_child_attendance_history_includes_open_attendance(
     checked_in_at = datetime(2026, 10, 25, 9, 10)
 
     with Session(engine) as session:
-        session.add(
-            FamilyModel(id=family_id, is_active=True)
-        )
+        session.add(FamilyModel(id=family_id, is_active=True))
         session.flush()
 
         session.add_all(
@@ -2182,10 +2178,7 @@ def test_list_service_attendances_returns_only_active_attendances(
 
         assert len(result) == 2
 
-        assert [
-            (item.room_name, item.child_name)
-            for item in result
-        ] == [
+        assert [(item.room_name, item.child_name) for item in result] == [
             ("Kids 4-6", "Maria Silva"),
             ("Nursery", "Beatriz Silva"),
         ]

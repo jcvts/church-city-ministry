@@ -53,14 +53,10 @@ def add_child_guardian(
     has_full_name = bool(request.full_name and request.full_name.strip())
 
     if has_guardian_id == has_full_name:
-        raise ValueError(
-            "Provide either guardian_id or full_name, but not both"
-        )
+        raise ValueError("Provide either guardian_id or full_name, but not both")
 
     if has_guardian_id and request.phone is not None:
-        raise ValueError(
-            "Phone can only be provided for a new guardian"
-        )
+        raise ValueError("Phone can only be provided for a new guardian")
 
     child = repository.get_child(request.child_id)
 

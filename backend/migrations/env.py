@@ -5,11 +5,24 @@ from sqlalchemy import engine_from_config, pool
 
 from church_city_kids.infrastructure.persistence import models as persistence_models
 from church_city_kids.infrastructure.persistence.base import Base
+from church_city_kids.infrastructure.persistence.database_config import (
+    get_database_path,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+configured_url = config.get_main_option("sqlalchemy.url")
+
+if not configured_url:
+    database_path = get_database_path().resolve()
+
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"sqlite:///{database_path.as_posix()}",
+    )
 _ = persistence_models
+
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -66,9 +79,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

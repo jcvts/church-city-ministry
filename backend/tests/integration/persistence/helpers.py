@@ -89,8 +89,7 @@ def create_attendance(
             id=attendance_id,
             child_id=child_id,
             session_id=session_id,
-            checked_in_at=checked_in_at
-            or datetime(2026, 9, 20, 18, 50),
+            checked_in_at=checked_in_at or datetime(2026, 9, 20, 18, 50),
             checked_out_at=None,
         )
     )

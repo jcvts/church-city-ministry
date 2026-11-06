@@ -52,8 +52,7 @@ def assign_pager(
             continue
 
         same_family_and_service = (
-            assignment.family_id == family_id
-            and assignment.service_id == service_id
+            assignment.family_id == family_id and assignment.service_id == service_id
         )
 
         if assignment.pager_id == pager.id:

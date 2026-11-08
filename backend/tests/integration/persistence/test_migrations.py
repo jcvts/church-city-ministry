@@ -32,6 +32,7 @@ def test_migrations_create_expected_schema(tmp_path: Path) -> None:
         "ministry_settings",
         "pager_assignments",
         "pagers",
+        "recurring_service_schedules",
         "rooms",
         "services",
         "sessions",

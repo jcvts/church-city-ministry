@@ -1,3 +1,4 @@
+from datetime import date, datetime, time, timedelta
 from typing import cast
 from uuid import UUID
 
@@ -749,13 +750,18 @@ class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
             for model in models
         ]
 
-    def add_service(self, service: Service) -> None:
+    def add_service(
+        self,
+        service: Service,
+        recurring_schedule_id: int | None = None,
+    ) -> None:
         self._session.add(
             ServiceModel(
                 id=service.id,
                 name=service.name,
                 starts_at=service.starts_at,
                 ends_at=service.ends_at,
+                recurring_schedule_id=recurring_schedule_id,
             )
         )
 
@@ -771,6 +777,22 @@ class SqlAlchemyCreateServiceRepository(CreateServiceRepository):
                 status=session.status.value,
             )
         )
+
+    def occurrence_exists(
+        self,
+        schedule_id: int,
+        target_date: date,
+    ) -> bool:
+        statement = select(ServiceModel.id).where(
+            ServiceModel.recurring_schedule_id == schedule_id,
+            ServiceModel.starts_at >= datetime.combine(target_date, time.min),
+            ServiceModel.starts_at
+            < datetime.combine(
+                target_date + timedelta(days=1),
+                time.min,
+            ),
+        )
+        return self._session.scalar(statement) is not None
 
 
 class SqlAlchemyCreateRoomRepository(CreateRoomRepository):

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
 from sqlalchemy import (
@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Time,
     UniqueConstraint,
     text,
 )
@@ -84,6 +85,32 @@ class VolunteerModel(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
+class RecurringServiceScheduleModel(Base):
+    __tablename__ = "recurring_service_schedules"
+    __table_args__ = (
+        CheckConstraint(
+            "weekday BETWEEN 0 AND 6",
+            name="ck_recurring_schedules_weekday",
+        ),
+        CheckConstraint(
+            "ends_at > starts_at",
+            name="ck_recurring_schedules_valid_time",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    weekday: Mapped[int] = mapped_column(nullable=False)
+    starts_at: Mapped[time] = mapped_column(Time, nullable=False)
+    ends_at: Mapped[time] = mapped_column(Time, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+
+
 class ServiceModel(Base):
     __tablename__ = "services"
     __table_args__ = (
@@ -91,12 +118,21 @@ class ServiceModel(Base):
             "ends_at IS NULL OR ends_at > starts_at",
             name="ck_services_valid_schedule",
         ),
+        UniqueConstraint(
+            "recurring_schedule_id",
+            "starts_at",
+            name="uq_services_recurring_schedule_start",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recurring_schedule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recurring_service_schedules.id"),
+        nullable=True,
+    )
 
 
 class RoomModel(Base):

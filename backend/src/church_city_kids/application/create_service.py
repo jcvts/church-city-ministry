@@ -18,6 +18,7 @@ class CreateServiceRequest:
     name: str
     starts_at: datetime
     ends_at: datetime | None = None
+    recurring_schedule_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,11 @@ class RoomAgeRangeNotConfiguredError(ValueError):
 class CreateServiceRepository(Protocol):
     def get_active_rooms(self) -> list[Room]: ...
 
-    def add_service(self, service: Service) -> None: ...
+    def add_service(
+        self,
+        service: Service,
+        recurring_schedule_id: int | None = None,
+    ) -> None: ...
 
     def add_session(self, session: Session) -> None: ...
 
@@ -75,7 +80,10 @@ def create_service(
 
         sessions.append(session)
 
-    repository.add_service(service)
+    repository.add_service(
+        service,
+        recurring_schedule_id=request.recurring_schedule_id,
+    )
 
     for session in sessions:
         repository.add_session(session)

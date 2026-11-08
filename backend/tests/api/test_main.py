@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -27,6 +27,7 @@ from church_city_kids.infrastructure.persistence.models import (
     FamilyModel,
     GuardianModel,
     MinistrySettingsModel,
+    RecurringServiceScheduleModel,
     RoomModel,
     ServiceModel,
     SessionModel,
@@ -1907,6 +1908,239 @@ def test_create_room_rejects_volunteer(api_client):
     )
 
     assert response.status_code == 403
+
+
+def test_create_recurring_service_schedule(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.post(
+        "/api/admin/recurring-services",
+        headers=headers,
+        json={
+            "name": "Culto da Manhã",
+            "weekday": 6,
+            "starts_at": "09:00",
+            "ends_at": "11:00",
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    assert isinstance(data["id"], int)
+    assert data["name"] == "Culto da Manhã"
+    assert data["weekday"] == 6
+    assert data["starts_at"] == "09:00:00"
+    assert data["ends_at"] == "11:00:00"
+    assert data["is_active"] is True
+
+    saved = verification_session.get(
+        RecurringServiceScheduleModel,
+        data["id"],
+    )
+    assert saved is not None
+    assert saved.name == "Culto da Manhã"
+
+
+def test_create_recurring_service_schedule_rejects_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    response = client.post(
+        "/api/admin/recurring-services",
+        headers=headers,
+        json={
+            "name": "Culto da Manhã",
+            "weekday": 6,
+            "starts_at": "09:00",
+            "ends_at": "11:00",
+        },
+    )
+
+    assert response.status_code == 403
+    assert verification_session.query(RecurringServiceScheduleModel).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("starts_at", "ends_at"),
+    [
+        ("11:00", "09:00"),
+        ("09:00", "09:00"),
+    ],
+)
+def test_create_recurring_service_schedule_rejects_invalid_times(
+    api_client: tuple[TestClient, Session],
+    starts_at: str,
+    ends_at: str,
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.post(
+        "/api/admin/recurring-services",
+        headers=headers,
+        json={
+            "name": "Culto da Manhã",
+            "weekday": 6,
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+        },
+    )
+
+    assert response.status_code == 422
+    assert verification_session.query(RecurringServiceScheduleModel).count() == 0
+
+
+def test_update_recurring_service_schedule(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    schedule = RecurringServiceScheduleModel(
+        name="Culto da Manhã",
+        weekday=6,
+        starts_at=time(9, 0),
+        ends_at=time(11, 0),
+        is_active=True,
+    )
+    verification_session.add(schedule)
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/admin/recurring-services/{schedule.id}",
+        headers=headers,
+        json={
+            "name": "Culto da Noite",
+            "starts_at": "18:00",
+            "ends_at": "20:00",
+            "is_active": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": schedule.id,
+        "name": "Culto da Noite",
+        "weekday": 6,
+        "starts_at": "18:00:00",
+        "ends_at": "20:00:00",
+        "is_active": False,
+    }
+
+    verification_session.refresh(schedule)
+    assert schedule.name == "Culto da Noite"
+    assert schedule.is_active is False
+
+
+def test_update_recurring_service_schedule_rejects_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="volunteer",
+    )
+
+    schedule = RecurringServiceScheduleModel(
+        name="Culto da Manhã",
+        weekday=6,
+        starts_at=time(9, 0),
+        ends_at=time(11, 0),
+        is_active=True,
+    )
+    verification_session.add(schedule)
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/admin/recurring-services/{schedule.id}",
+        headers=headers,
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 403
+
+    verification_session.refresh(schedule)
+    assert schedule.is_active is True
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"starts_at": "12:00"},
+        {"ends_at": "08:00"},
+        {"ends_at": "09:00"},
+    ],
+)
+def test_update_recurring_service_schedule_rejects_invalid_times(
+    api_client: tuple[TestClient, Session],
+    updates: dict[str, str],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    schedule = RecurringServiceScheduleModel(
+        name="Culto da Manhã",
+        weekday=6,
+        starts_at=time(9, 0),
+        ends_at=time(11, 0),
+        is_active=True,
+    )
+    verification_session.add(schedule)
+    verification_session.commit()
+
+    response = client.patch(
+        f"/api/admin/recurring-services/{schedule.id}",
+        headers=headers,
+        json=updates,
+    )
+
+    assert response.status_code == 422
+
+    verification_session.refresh(schedule)
+    assert schedule.starts_at == time(9, 0)
+    assert schedule.ends_at == time(11, 0)
+
+
+def test_update_recurring_service_schedule_returns_404_when_not_found(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.patch(
+        "/api/admin/recurring-services/999999",
+        headers=headers,
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Recurring service schedule not found",
+    }
 
 
 def test_list_rooms_requires_authentication(api_client):
@@ -5409,6 +5643,77 @@ def test_get_admin_settings_rejects_volunteer(
     )
 
     assert response.status_code == 403
+
+
+def test_list_recurring_services_returns_schedules_ordered(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    evening = RecurringServiceScheduleModel(
+        name="Culto da Noite",
+        weekday=6,
+        starts_at=time(18, 0),
+        ends_at=time(20, 0),
+        is_active=True,
+    )
+    morning = RecurringServiceScheduleModel(
+        name="Culto da Manhã",
+        weekday=6,
+        starts_at=time(9, 0),
+        ends_at=time(11, 0),
+        is_active=False,
+    )
+
+    verification_session.add_all([evening, morning])
+    verification_session.commit()
+
+    response = client.get(
+        "/api/admin/recurring-services",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": morning.id,
+            "name": "Culto da Manhã",
+            "weekday": 6,
+            "starts_at": "09:00:00",
+            "ends_at": "11:00:00",
+            "is_active": False,
+        },
+        {
+            "id": evening.id,
+            "name": "Culto da Noite",
+            "weekday": 6,
+            "starts_at": "18:00:00",
+            "ends_at": "20:00:00",
+            "is_active": True,
+        },
+    ]
+
+
+def test_list_recurring_services_returns_empty_list(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, verification_session = api_client
+    headers = create_authenticated_headers(
+        verification_session,
+        role="admin",
+    )
+
+    response = client.get(
+        "/api/admin/recurring-services",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_create_service_rejects_room_without_age_range(

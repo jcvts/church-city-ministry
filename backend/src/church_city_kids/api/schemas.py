@@ -1,8 +1,8 @@
-from datetime import date, datetime
-from typing import Literal
+from datetime import date, datetime, time
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, StrictBool, model_validator
+from pydantic import BaseModel, Field, StrictBool, model_validator
 
 
 class RegisterChildBody(BaseModel):
@@ -304,3 +304,24 @@ class ListVolunteerAssignmentResponse(BaseModel):
     volunteer_id: UUID
     volunteer_name: str
     role: str | None
+
+
+class CreateRecurringServiceScheduleBody(BaseModel):
+    name: str | None = None
+    weekday: int = Field(ge=0, le=6)
+    starts_at: time
+    ends_at: time
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> Self:
+        if self.ends_at <= self.starts_at:
+            raise ValueError("End time must be after start time")
+        return self
+
+
+class UpdateRecurringServiceScheduleBody(BaseModel):
+    name: str | None = None
+    weekday: int | None = Field(default=None, ge=0, le=6)
+    starts_at: time | None = None
+    ends_at: time | None = None
+    is_active: bool | None = None

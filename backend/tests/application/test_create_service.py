@@ -22,7 +22,11 @@ class FakeCreateServiceRepository:
     def get_active_rooms(self) -> list[Room]:
         return [room for room in self.rooms if room.is_active]
 
-    def add_service(self, service: Service) -> None:
+    def add_service(
+        self,
+        service: Service,
+        recurring_schedule_id: int | None = None,
+    ) -> None:
         self.added_services.append(service)
 
     def add_session(self, session: Session) -> None:

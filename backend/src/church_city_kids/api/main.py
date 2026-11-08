@@ -6,10 +6,12 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from church_city_kids.api.dependencies import (
+    engine,
     get_db_session,
     get_jwt_token_service,
     require_admin,
@@ -27,6 +29,7 @@ from church_city_kids.api.schemas import (
     CheckOutResponse,
     ChildDetailsResponse,
     ChildResponse,
+    CreateRecurringServiceScheduleBody,
     CreateRoomBody,
     CreateRoomResponse,
     CreateServiceBody,
@@ -51,6 +54,7 @@ from church_city_kids.api.schemas import (
     UpdateFamilyBody,
     UpdateGuardianBody,
     UpdateMinistrySettingsBody,
+    UpdateRecurringServiceScheduleBody,
     UpdateRoomBody,
     UpdateUserStatusBody,
     UpdateUserStatusResponse,
@@ -116,6 +120,10 @@ from church_city_kids.application.create_user import (
 from church_city_kids.application.create_volunteer import (
     CreateVolunteerRequest,
     create_volunteer,
+)
+from church_city_kids.application.generate_recurring_services import (
+    RecurringServiceSchedule,
+    generate_recurring_services,
 )
 from church_city_kids.application.get_child_attendance_history import (
     get_child_attendance_history,
@@ -225,7 +233,10 @@ from church_city_kids.infrastructure.persistence.automatic_backup import (
 from church_city_kids.infrastructure.persistence.database_config import (
     get_database_path,
 )
-from church_city_kids.infrastructure.persistence.models import ServiceModel
+from church_city_kids.infrastructure.persistence.models import (
+    RecurringServiceScheduleModel,
+    ServiceModel,
+)
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyAddChildGuardianRepository,
     SqlAlchemyAssignVolunteerRepository,
@@ -260,6 +271,46 @@ from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
 from church_city_kids.infrastructure.security.passwords import PasswordHasher
 
 
+def generate_todays_services(
+    engine: Engine,
+    target_date: date,
+) -> None:
+    with Session(engine) as db_session:
+        schedules = db_session.scalars(
+            select(RecurringServiceScheduleModel).where(
+                RecurringServiceScheduleModel.is_active.is_(True),
+                RecurringServiceScheduleModel.weekday == target_date.weekday(),
+            )
+        ).all()
+
+        if not schedules:
+            return
+
+        recurring_schedules = [
+            RecurringServiceSchedule(
+                id=schedule.id,
+                name=schedule.name,
+                weekday=schedule.weekday,
+                starts_at=schedule.starts_at,
+                ends_at=schedule.ends_at,
+            )
+            for schedule in schedules
+        ]
+
+        repository = SqlAlchemyCreateServiceRepository(db_session)
+
+        try:
+            generate_recurring_services(
+                target_date,
+                recurring_schedules,
+                repository,
+            )
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     backup_manager = getattr(app.state, "backup_manager", None)
@@ -275,6 +326,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     backup_manager.start()
 
     try:
+        generate_todays_services(
+            engine,
+            date.today(),
+        )
         yield
     finally:
         backup_manager.stop()
@@ -970,7 +1025,7 @@ def update_room_endpoint(
     except InvalidAgeRangeError as exc:
         session.rollback()
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -1305,6 +1360,31 @@ def check_out_child_endpoint(
     return CheckOutResponse(attendance_id=result.attendance_id)
 
 
+@app.get("/api/admin/recurring-services")
+def list_recurring_services_endpoint(
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> list[dict[str, object]]:
+    schedules = db_session.scalars(
+        select(RecurringServiceScheduleModel).order_by(
+            RecurringServiceScheduleModel.weekday,
+            RecurringServiceScheduleModel.starts_at,
+        )
+    ).all()
+
+    return [
+        {
+            "id": schedule.id,
+            "name": schedule.name,
+            "weekday": schedule.weekday,
+            "starts_at": schedule.starts_at.isoformat(),
+            "ends_at": schedule.ends_at.isoformat(),
+            "is_active": schedule.is_active,
+        }
+        for schedule in schedules
+    ]
+
+
 @app.get("/api/admin/settings")
 def get_ministry_settings_endpoint(
     db_session: Annotated[Session, Depends(get_db_session)],
@@ -1346,6 +1426,105 @@ def update_ministry_settings_endpoint(
         raise
 
     return {"pager_required": settings.pager_required}
+
+
+@app.post(
+    "/api/admin/recurring-services",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_recurring_service_schedule_endpoint(
+    body: CreateRecurringServiceScheduleBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, object]:
+    schedule = RecurringServiceScheduleModel(
+        name=body.name,
+        weekday=body.weekday,
+        starts_at=body.starts_at,
+        ends_at=body.ends_at,
+        is_active=True,
+    )
+
+    try:
+        db_session.add(schedule)
+        db_session.commit()
+        db_session.refresh(schedule)
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return {
+        "id": schedule.id,
+        "name": schedule.name,
+        "weekday": schedule.weekday,
+        "starts_at": schedule.starts_at.isoformat(),
+        "ends_at": schedule.ends_at.isoformat(),
+        "is_active": schedule.is_active,
+    }
+
+
+@app.patch("/api/admin/recurring-services/{schedule_id}")
+def update_recurring_service_schedule_endpoint(
+    schedule_id: int,
+    body: UpdateRecurringServiceScheduleBody,
+    db_session: Annotated[Session, Depends(get_db_session)],
+    _auth: Annotated[User, Depends(require_admin)],
+) -> dict[str, object]:
+    schedule = db_session.get(RecurringServiceScheduleModel, schedule_id)
+
+    if schedule is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recurring service schedule not found",
+        )
+
+    updates = body.model_dump(exclude_unset=True)
+
+    if "name" in updates:
+        schedule.name = updates["name"]
+
+    if "weekday" in updates:
+        if updates["weekday"] is None:
+            raise HTTPException(status_code=422, detail="Weekday cannot be null")
+        schedule.weekday = updates["weekday"]
+
+    if "starts_at" in updates:
+        if updates["starts_at"] is None:
+            raise HTTPException(status_code=422, detail="Start time cannot be null")
+        schedule.starts_at = updates["starts_at"]
+
+    if "ends_at" in updates:
+        if updates["ends_at"] is None:
+            raise HTTPException(status_code=422, detail="End time cannot be null")
+        schedule.ends_at = updates["ends_at"]
+
+    if "is_active" in updates:
+        if updates["is_active"] is None:
+            raise HTTPException(status_code=422, detail="Active status cannot be null")
+        schedule.is_active = updates["is_active"]
+
+    if schedule.ends_at <= schedule.starts_at:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="End time must be after start time",
+        )
+
+    try:
+        db_session.commit()
+        db_session.refresh(schedule)
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return {
+        "id": schedule.id,
+        "name": schedule.name,
+        "weekday": schedule.weekday,
+        "starts_at": schedule.starts_at.isoformat(),
+        "ends_at": schedule.ends_at.isoformat(),
+        "is_active": schedule.is_active,
+    }
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)

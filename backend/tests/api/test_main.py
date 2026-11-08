@@ -6487,3 +6487,71 @@ def test_list_service_volunteers_returns_404_for_unknown_service(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Service not found"}
+
+
+def test_remove_volunteer_assignment_via_api(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    _, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    create_response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={"volunteer_id": str(volunteer_id)},
+    )
+    assert create_response.status_code == 201
+
+    assignment_id = UUID(create_response.json()["assignment_id"])
+
+    response = client.delete(
+        f"/api/volunteer-assignments/{assignment_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert db.get(VolunteerAssignmentModel, assignment_id) is None
+    assert db.get(VolunteerModel, volunteer_id) is not None
+
+
+def test_remove_volunteer_assignment_returns_404_for_unknown_assignment(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+
+    response = client.delete(
+        f"/api/volunteer-assignments/{uuid4()}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Volunteer assignment not found",
+    }
+
+
+def test_remove_volunteer_assignment_requires_authentication(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
+    _, session_id, volunteer_id = create_volunteer_assignment_scenario(db)
+
+    create_response = client.post(
+        f"/api/sessions/{session_id}/volunteers",
+        headers=headers,
+        json={"volunteer_id": str(volunteer_id)},
+    )
+    assert create_response.status_code == 201
+
+    assignment_id = UUID(create_response.json()["assignment_id"])
+
+    response = client.delete(
+        f"/api/volunteer-assignments/{assignment_id}",
+    )
+
+    assert response.status_code == 401
+    assert db.get(VolunteerAssignmentModel, assignment_id) is not None

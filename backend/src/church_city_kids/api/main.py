@@ -153,6 +153,10 @@ from church_city_kids.application.remove_child_guardian import (
     RemoveChildGuardianRequest,
     remove_child_guardian,
 )
+from church_city_kids.application.remove_volunteer_assignment import (
+    VolunteerAssignmentNotFoundError,
+    remove_volunteer_assignment,
+)
 from church_city_kids.application.update_child import (
     ChildNotFoundError as UpdateChildNotFoundError,
 )
@@ -242,6 +246,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyMinistrySettingsRepository,
     SqlAlchemyRegistrationRepository,
     SqlAlchemyRemoveChildGuardianRepository,
+    SqlAlchemyRemoveVolunteerAssignmentRepository,
     SqlAlchemyServiceAttendanceRepository,
     SqlAlchemyUpdateChildGuardianRepository,
     SqlAlchemyUpdateChildRepository,
@@ -1137,6 +1142,36 @@ def assign_volunteer_endpoint(
     return AssignVolunteerResponse(
         assignment_id=result.assignment_id,
     )
+
+
+@app.delete(
+    "/api/volunteer-assignments/{assignment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_volunteer_assignment_endpoint(
+    assignment_id: UUID,
+    db_session: Session = Depends(get_db_session),
+    _auth: User = Depends(require_bearer_token),
+) -> None:
+    repository = SqlAlchemyRemoveVolunteerAssignmentRepository(db_session)
+
+    try:
+        remove_volunteer_assignment(
+            assignment_id=assignment_id,
+            repository=repository,
+        )
+        db_session.commit()
+
+    except VolunteerAssignmentNotFoundError as exc:
+        db_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Volunteer assignment not found",
+        ) from exc
+
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 @app.post(

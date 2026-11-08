@@ -36,6 +36,9 @@ from church_city_kids.application.list_volunteer_assignments import (
     VolunteerAssignmentItem,
 )
 from church_city_kids.application.registration import RegistrationRepository
+from church_city_kids.application.remove_volunteer_assignment import (
+    RemoveVolunteerAssignmentRepository,
+)
 from church_city_kids.application.update_room import UpdateRoomRepository
 from church_city_kids.domain.attendance import Attendance
 from church_city_kids.domain.people import (
@@ -1337,3 +1340,39 @@ class SqlAlchemyListVolunteerAssignmentsRepository(ListVolunteerAssignmentsRepos
             )
             for assignment, volunteer_name in rows
         ]
+
+
+class SqlAlchemyRemoveVolunteerAssignmentRepository(
+    RemoveVolunteerAssignmentRepository
+):
+    def __init__(self, session: DbSession) -> None:
+        self._session = session
+
+    def get_by_id(
+        self,
+        assignment_id: UUID,
+    ) -> VolunteerAssignment | None:
+        model = self._session.get(
+            VolunteerAssignmentModel,
+            assignment_id,
+        )
+
+        if model is None:
+            return None
+
+        return VolunteerAssignment(
+            id=model.id,
+            service_id=model.service_id,
+            session_id=model.session_id,
+            volunteer_id=model.volunteer_id,
+            role=model.role,
+        )
+
+    def delete(self, assignment: VolunteerAssignment) -> None:
+        model = self._session.get(
+            VolunteerAssignmentModel,
+            assignment.id,
+        )
+
+        if model is not None:
+            self._session.delete(model)

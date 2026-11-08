@@ -1866,20 +1866,24 @@ def test_create_service_requires_authentication(api_client):
     assert response.status_code == 401
 
 
-def test_create_service_rejects_volunteer(api_client):
-    client, verification_session = api_client
-    headers = create_authenticated_headers(
-        verification_session,
-        role="volunteer",
-    )
+def test_create_service_allows_volunteer(
+    api_client: tuple[TestClient, Session],
+) -> None:
+    client, db = api_client
+    headers = create_authenticated_headers(db, role="volunteer")
 
     response = client.post(
         "/api/services",
         headers=headers,
-        json={},
+        json={
+            "name": "Culto 08/11/2026",
+            "starts_at": "2026-11-08T09:00:00",
+            "ends_at": "2026-11-08T11:00:00",
+        },
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 201
+    assert UUID(response.json()["service_id"])
 
 
 def test_create_room_requires_authentication(api_client):

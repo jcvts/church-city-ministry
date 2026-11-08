@@ -761,7 +761,7 @@ def list_services_endpoint(
 def create_service_endpoint(
     body: CreateServiceBody,
     session: Annotated[Session, Depends(get_db_session)],
-    _auth: Annotated[User, Depends(require_admin)],
+    _auth: Annotated[User, Depends(require_bearer_token)],
 ) -> CreateServiceResponse:
     repository = SqlAlchemyCreateServiceRepository(session)
 

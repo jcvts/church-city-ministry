@@ -267,6 +267,7 @@ from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyUserRepository,
     SqlAlchemyVolunteerRepository,
 )
+from church_city_kids.infrastructure.security.config import get_jwt_secret_key
 from church_city_kids.infrastructure.security.jwt_tokens import JwtTokenService
 from church_city_kids.infrastructure.security.passwords import PasswordHasher
 
@@ -313,6 +314,8 @@ def generate_todays_services(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    get_jwt_secret_key()
+
     backup_manager = getattr(app.state, "backup_manager", None)
 
     if backup_manager is None:

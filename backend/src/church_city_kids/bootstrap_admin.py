@@ -1,6 +1,4 @@
-
 """Create the initial Church City Kids administrator."""
-
 import getpass
 from uuid import uuid4
 
@@ -15,6 +13,9 @@ from church_city_kids.infrastructure.persistence.database_config import (
 )
 from church_city_kids.infrastructure.persistence.repositories import (
     SqlAlchemyUserRepository,
+)
+from church_city_kids.infrastructure.security.config import (
+    initialize_jwt_secret_key,
 )
 from church_city_kids.infrastructure.security.passwords import PasswordHasher
 
@@ -66,7 +67,14 @@ def main() -> None:
             repository = SqlAlchemyUserRepository(session)
 
             if any(user.role == "admin" for user in repository.list_all()):
-                print("An administrator already exists. No changes made.")
+                created = initialize_jwt_secret_key()
+
+                if created:
+                    print("JWT secret key created successfully.")
+                else:
+                    print("JWT secret key already exists.")
+
+                print("Existing administrator preserved.")
                 return
 
             print("Church City Kids - Initial administrator setup")
@@ -88,8 +96,15 @@ def main() -> None:
 
             if created:
                 print("Initial administrator created successfully.")
+                key_created = initialize_jwt_secret_key()
+
+                if key_created:
+                    print("JWT secret key created successfully.")
+            
             else:
-                print("An administrator already exists. No changes made.")
+                print("JWT secret key already exists.")
+
+            print("Existing administrator preserved.")
     finally:
         engine.dispose()
 

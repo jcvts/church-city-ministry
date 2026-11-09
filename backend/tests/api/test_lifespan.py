@@ -70,6 +70,11 @@ def test_lifespan_creates_real_database_backup(
         str(database_path),
     )
 
+    monkeypatch.setenv(
+        "CHURCH_CITY_JWT_SECRET_KEY",
+        "test-only-jwt-secret-key-at-least-32-bytes",
+    )
+
     with TestClient(app) as client:
         response = client.get("/health")
         assert response.status_code == 200

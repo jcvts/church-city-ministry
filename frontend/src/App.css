@@ -148,3 +148,14 @@
     transition: none;
   }
 }
+
+.login-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.login-button:disabled {
+  opacity: 0.7;
+}
